@@ -1,0 +1,387 @@
+{
+  "metadata": {
+    "source_pdf": "synthetic_floorplan.pdf",
+    "extraction_date": "2026-04-16",
+    "pipeline_version": "0.1.0",
+    "total_segments": 7,
+    "coordinate_system": "pdf_points_bottom_left_origin"
+  },
+  "segments": [
+    {
+      "segment_id": "10ba54d8-ce24-4662-a170-68e123def93f",
+      "geometry": {
+        "start": [
+          47.75,
+          739.75
+        ],
+        "end": [
+          47.75,
+          444.25
+        ],
+        "centerline_length": 295.5,
+        "angle_degrees": 90.0,
+        "thickness": 6.0
+      },
+      "visual_properties": {
+        "line_weight": 1.2000000476837158,
+        "color_rgb": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "is_dashed": false,
+        "layer_name": null
+      },
+      "topology": {
+        "start_junction_id": "0784b220-456d-49e0-99a5-d2c63f86e394",
+        "end_junction_id": "b9f92b3f-eed3-4dbc-963a-af1319b7f802",
+        "start_junction_type": "corner",
+        "end_junction_type": "corner",
+        "connected_segment_ids": [
+          "5da679f4-5404-4497-b3a3-2043a59c6e71",
+          "9abeec93-0a6e-41aa-84f1-c3aa729f144c"
+        ]
+      },
+      "semantic": {
+        "functional_role": "exterior",
+        "confidence": 1.0,
+        "rule_triggered": "human_label",
+        "requires_cross_document_validation": false
+      }
+    },
+    {
+      "segment_id": "39acb364-c7bb-4a27-9523-db84573b8e2c",
+      "geometry": {
+        "start": [
+          297.0,
+          738.0
+        ],
+        "end": [
+          552.25,
+          739.75
+        ],
+        "centerline_length": 255.25599895007366,
+        "angle_degrees": 0.39281505646954024,
+        "thickness": 6.0
+      },
+      "visual_properties": {
+        "line_weight": 1.2000000476837158,
+        "color_rgb": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "is_dashed": false,
+        "layer_name": null
+      },
+      "topology": {
+        "start_junction_id": "adebb683-d3ef-4a32-becd-f355e2c77141",
+        "end_junction_id": "050bb80c-5e2d-4579-84cd-6184a0d6ecaf",
+        "start_junction_type": "t-junction",
+        "end_junction_type": "corner",
+        "connected_segment_ids": [
+          "3b1107c4-9f8a-48c4-b696-5ea449c89801",
+          "9abeec93-0a6e-41aa-84f1-c3aa729f144c",
+          "b6ba6303-b0ee-416f-8dc8-c7d60a533164"
+        ]
+      },
+      "semantic": {
+        "functional_role": "exterior",
+        "confidence": 1.0,
+        "rule_triggered": "human_label",
+        "requires_cross_document_validation": false
+      }
+    },
+    {
+      "segment_id": "3b1107c4-9f8a-48c4-b696-5ea449c89801",
+      "geometry": {
+        "start": [
+          297.0,
+          738.0
+        ],
+        "end": [
+          297.0,
+          446.0
+        ],
+        "centerline_length": 292.0,
+        "angle_degrees": 90.0,
+        "thickness": 6.0
+      },
+      "visual_properties": {
+        "line_weight": 1.2000000476837158,
+        "color_rgb": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "is_dashed": false,
+        "layer_name": null
+      },
+      "topology": {
+        "start_junction_id": "adebb683-d3ef-4a32-becd-f355e2c77141",
+        "end_junction_id": "95ef39f9-fb88-4d70-9f54-49df2db75cdd",
+        "start_junction_type": "t-junction",
+        "end_junction_type": "t-junction",
+        "connected_segment_ids": [
+          "39acb364-c7bb-4a27-9523-db84573b8e2c",
+          "5da679f4-5404-4497-b3a3-2043a59c6e71",
+          "78a83514-c936-49c0-a2ab-186c8c6886ba",
+          "9abeec93-0a6e-41aa-84f1-c3aa729f144c"
+        ]
+      },
+      "semantic": {
+        "functional_role": "wet_wall",
+        "confidence": 1.0,
+        "rule_triggered": "human_label",
+        "requires_cross_document_validation": true
+      }
+    },
+    {
+      "segment_id": "5da679f4-5404-4497-b3a3-2043a59c6e71",
+      "geometry": {
+        "start": [
+          297.0,
+          446.0
+        ],
+        "end": [
+          47.75,
+          444.25
+        ],
+        "centerline_length": 249.25614335458212,
+        "angle_degrees": 0.4022706785221146,
+        "thickness": 6.0
+      },
+      "visual_properties": {
+        "line_weight": 1.2000000476837158,
+        "color_rgb": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "is_dashed": false,
+        "layer_name": null
+      },
+      "topology": {
+        "start_junction_id": "95ef39f9-fb88-4d70-9f54-49df2db75cdd",
+        "end_junction_id": "b9f92b3f-eed3-4dbc-963a-af1319b7f802",
+        "start_junction_type": "t-junction",
+        "end_junction_type": "corner",
+        "connected_segment_ids": [
+          "10ba54d8-ce24-4662-a170-68e123def93f",
+          "3b1107c4-9f8a-48c4-b696-5ea449c89801",
+          "78a83514-c936-49c0-a2ab-186c8c6886ba"
+        ]
+      },
+      "semantic": {
+        "functional_role": "exterior",
+        "confidence": 1.0,
+        "rule_triggered": "human_label",
+        "requires_cross_document_validation": false
+      }
+    },
+    {
+      "segment_id": "78a83514-c936-49c0-a2ab-186c8c6886ba",
+      "geometry": {
+        "start": [
+          552.25,
+          444.25
+        ],
+        "end": [
+          297.0,
+          446.0
+        ],
+        "centerline_length": 255.25599895007366,
+        "angle_degrees": 179.60718494353046,
+        "thickness": 6.0
+      },
+      "visual_properties": {
+        "line_weight": 1.2000000476837158,
+        "color_rgb": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "is_dashed": false,
+        "layer_name": null
+      },
+      "topology": {
+        "start_junction_id": "796ba1fc-731a-4af5-b92e-fc17746a89bb",
+        "end_junction_id": "95ef39f9-fb88-4d70-9f54-49df2db75cdd",
+        "start_junction_type": "corner",
+        "end_junction_type": "t-junction",
+        "connected_segment_ids": [
+          "3b1107c4-9f8a-48c4-b696-5ea449c89801",
+          "5da679f4-5404-4497-b3a3-2043a59c6e71",
+          "b6ba6303-b0ee-416f-8dc8-c7d60a533164"
+        ]
+      },
+      "semantic": {
+        "functional_role": "exterior",
+        "confidence": 1.0,
+        "rule_triggered": "human_label",
+        "requires_cross_document_validation": false
+      }
+    },
+    {
+      "segment_id": "9abeec93-0a6e-41aa-84f1-c3aa729f144c",
+      "geometry": {
+        "start": [
+          47.75,
+          739.75
+        ],
+        "end": [
+          297.0,
+          738.0
+        ],
+        "centerline_length": 249.25614335458212,
+        "angle_degrees": 179.59772932147789,
+        "thickness": 6.0
+      },
+      "visual_properties": {
+        "line_weight": 1.2000000476837158,
+        "color_rgb": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "is_dashed": false,
+        "layer_name": null
+      },
+      "topology": {
+        "start_junction_id": "0784b220-456d-49e0-99a5-d2c63f86e394",
+        "end_junction_id": "adebb683-d3ef-4a32-becd-f355e2c77141",
+        "start_junction_type": "corner",
+        "end_junction_type": "t-junction",
+        "connected_segment_ids": [
+          "10ba54d8-ce24-4662-a170-68e123def93f",
+          "39acb364-c7bb-4a27-9523-db84573b8e2c",
+          "3b1107c4-9f8a-48c4-b696-5ea449c89801"
+        ]
+      },
+      "semantic": {
+        "functional_role": "exterior",
+        "confidence": 1.0,
+        "rule_triggered": "human_label",
+        "requires_cross_document_validation": false
+      }
+    },
+    {
+      "segment_id": "b6ba6303-b0ee-416f-8dc8-c7d60a533164",
+      "geometry": {
+        "start": [
+          552.25,
+          444.25
+        ],
+        "end": [
+          552.25,
+          739.75
+        ],
+        "centerline_length": 295.5,
+        "angle_degrees": 90.0,
+        "thickness": 6.0
+      },
+      "visual_properties": {
+        "line_weight": 1.2000000476837158,
+        "color_rgb": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "is_dashed": false,
+        "layer_name": null
+      },
+      "topology": {
+        "start_junction_id": "050bb80c-5e2d-4579-84cd-6184a0d6ecaf",
+        "end_junction_id": "796ba1fc-731a-4af5-b92e-fc17746a89bb",
+        "start_junction_type": "corner",
+        "end_junction_type": "corner",
+        "connected_segment_ids": [
+          "39acb364-c7bb-4a27-9523-db84573b8e2c",
+          "78a83514-c936-49c0-a2ab-186c8c6886ba"
+        ]
+      },
+      "semantic": {
+        "functional_role": "exterior",
+        "confidence": 1.0,
+        "rule_triggered": "human_label",
+        "requires_cross_document_validation": false
+      }
+    }
+  ],
+  "junctions": [
+    {
+      "junction_id": "050bb80c-5e2d-4579-84cd-6184a0d6ecaf",
+      "position": [
+        552.25,
+        739.75
+      ],
+      "junction_type": "corner",
+      "connected_segment_ids": [
+        "39acb364-c7bb-4a27-9523-db84573b8e2c",
+        "b6ba6303-b0ee-416f-8dc8-c7d60a533164"
+      ]
+    },
+    {
+      "junction_id": "0784b220-456d-49e0-99a5-d2c63f86e394",
+      "position": [
+        47.75,
+        739.75
+      ],
+      "junction_type": "corner",
+      "connected_segment_ids": [
+        "9abeec93-0a6e-41aa-84f1-c3aa729f144c",
+        "10ba54d8-ce24-4662-a170-68e123def93f"
+      ]
+    },
+    {
+      "junction_id": "796ba1fc-731a-4af5-b92e-fc17746a89bb",
+      "position": [
+        552.25,
+        444.25
+      ],
+      "junction_type": "corner",
+      "connected_segment_ids": [
+        "78a83514-c936-49c0-a2ab-186c8c6886ba",
+        "b6ba6303-b0ee-416f-8dc8-c7d60a533164"
+      ]
+    },
+    {
+      "junction_id": "95ef39f9-fb88-4d70-9f54-49df2db75cdd",
+      "position": [
+        297.0,
+        446.0
+      ],
+      "junction_type": "t-junction",
+      "connected_segment_ids": [
+        "78a83514-c936-49c0-a2ab-186c8c6886ba",
+        "5da679f4-5404-4497-b3a3-2043a59c6e71",
+        "3b1107c4-9f8a-48c4-b696-5ea449c89801"
+      ]
+    },
+    {
+      "junction_id": "adebb683-d3ef-4a32-becd-f355e2c77141",
+      "position": [
+        297.0,
+        738.0
+      ],
+      "junction_type": "t-junction",
+      "connected_segment_ids": [
+        "9abeec93-0a6e-41aa-84f1-c3aa729f144c",
+        "39acb364-c7bb-4a27-9523-db84573b8e2c",
+        "3b1107c4-9f8a-48c4-b696-5ea449c89801"
+      ]
+    },
+    {
+      "junction_id": "b9f92b3f-eed3-4dbc-963a-af1319b7f802",
+      "position": [
+        47.75,
+        444.25
+      ],
+      "junction_type": "corner",
+      "connected_segment_ids": [
+        "5da679f4-5404-4497-b3a3-2043a59c6e71",
+        "10ba54d8-ce24-4662-a170-68e123def93f"
+      ]
+    }
+  ]
+}

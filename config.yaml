@@ -1,0 +1,40 @@
+# Floor Plan Semantic Extraction Pipeline — Thresholds
+# All tunable numeric constants live here. No magic numbers in .py files.
+
+# Stage 1 — Path Extraction
+coordinate_flip_y: true               # PyMuPDF top-left → schema's bottom-left origin
+
+# Stage 2 — Property Classification
+wall_min_line_weight: 0.5             # pt — below this is annotation, not wall
+annotation_max_line_weight: 0.3       # pt
+dimension_text_proximity: 15.0        # pt — thin line within this of text → dimension
+wall_color_max_darkness: 0.3          # perceived lightness — walls must be darker than this (0=black, 1=white)
+
+# Stage 3 — Wall Detection
+parallel_angle_tolerance: 2.0         # degrees — max angle difference for two lines to count as parallel
+orthogonal_angle_tolerance: 5.0       # degrees — tolerance around 0/90/180/270 for orthogonality flag
+wall_min_thickness: 2.0               # pt — thinner than this is not a wall
+wall_max_thickness: 40.0              # pt — thicker than this is likely a filled region
+wall_min_overlap_ratio: 0.3           # fraction of shorter segment that must project onto its pair
+
+# Stage 4 — Topology
+junction_snap_distance: 3.0           # pt — endpoints within this distance collapse to one junction
+
+# Stage 5 — Semantic Role Assignment
+demising_min_length: 200.0            # pt — walls longer than this crossing X/T junctions are candidate demising
+semantic_min_confidence: 0.4          # below this → role downgraded to "unknown"
+wet_zone_proximity: 50.0              # pt — wall midpoint within this of a zone label = candidate wet wall
+bearing_min_continuous_length: 300.0  # pt — continuous corner-chain path length threshold
+
+# Text labels that indicate wet zones (case-insensitive prefix match)
+wet_zone_labels:
+  - BATH
+  - BATHROOM
+  - KITCHEN
+  - WC
+  - RESTROOM
+  - POWDER
+  - KITCHENETTE
+
+# Evaluation
+evaluation_match_proximity: 3.0       # pt — midpoint distance for matching segments across pipeline/ground-truth
