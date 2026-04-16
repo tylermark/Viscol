@@ -1,0 +1,67 @@
+tests/test_extract.py
+  cf85da87ee5d77b9 1-235
+tests/test_schema_validator.py
+  cf85da87ee5d77b9 1-128
+tests/test_topology.py
+  cf85da87ee5d77b9 1-61
+pipeline.py
+  cf85da87ee5d77b9 1-195
+CLAUDE.md
+  cf85da87ee5d77b9 1-244
+stages/_config.py
+  cf85da87ee5d77b9 1-40
+stages/detect_walls.py
+  cf85da87ee5d77b9 1-212
+tests/fixtures/make_synthetic_pdf.py
+  cf85da87ee5d77b9 1-97
+tests/test_semantics.py
+  cf85da87ee5d77b9 1-95
+stages/build_topology.py
+  cf85da87ee5d77b9 1-297
+schema_validator.py
+  cf85da87ee5d77b9 1-179
+.gitignore
+  cf85da87ee5d77b9 1-12
+requirements.txt
+  cf85da87ee5d77b9 1-6
+stages/__init__.py
+  cf85da87ee5d77b9 1-12
+stages/assign_semantics.py
+  cf85da87ee5d77b9 1-227
+tests/fixtures.py
+  cf85da87ee5d77b9 1-110
+config.yaml
+  cf85da87ee5d77b9 1-40
+tests/test_walls.py
+  cf85da87ee5d77b9 1-62
+evaluation/ground_truth/synthetic_floorplan.json
+  cf85da87ee5d77b9 1-387
+tests/test_classify.py
+  cf85da87ee5d77b9 1-61
+evaluate.py
+  cf85da87ee5d77b9 1-275
+stages/classify_properties.py
+  cf85da87ee5d77b9 1-73
+stages/extract_paths.py
+  cf85da87ee5d77b9 1-213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "ac34d8c6b0c59568630127b7a25348d18e58c0ed",
+  "prompts": {
+    "cf85da87ee5d77b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "520ab9c8-2e5c-47c6-b2c4-2d56e43e4ec0",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 3261,
+      "total_deletions": 0,
+      "accepted_lines": 3261,
+      "overriden_lines": 0
+    }
+  }
+}
