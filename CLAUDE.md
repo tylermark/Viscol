@@ -117,7 +117,8 @@ The canonical output is a **structured graph per drawing**, FM-training-ready. E
       "openings": 0,
       "text_regions": 0,
       "grid_lines": 0,
-      "junctions": 0
+      "junctions": 0,
+      "cross_references": 0
     }
   },
   "rooms": [

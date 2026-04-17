@@ -90,14 +90,14 @@ def _summarize_run(plan: Path, output_dir: Path, config: dict) -> dict:
     with out.open("r", encoding="utf-8") as f:
         doc = json.load(f)
 
-    role_counts = Counter(s["semantic"]["functional_role"] for s in doc["segments"])
-    thicknesses = [s["geometry"]["thickness"] for s in doc["segments"]]
-    lengths = [s["geometry"]["centerline_length"] for s in doc["segments"]]
+    role_counts = Counter(s["semantic"]["functional_role"] for s in doc["walls"])
+    thicknesses = [s["geometry"]["thickness"] for s in doc["walls"]]
+    lengths = [s["geometry"]["centerline_length"] for s in doc["walls"]]
 
     result.update(
         {
             "status": "ok",
-            "walls": len(doc["segments"]),
+            "walls": len(doc["walls"]),
             "junctions": len(doc["junctions"]),
             "role_counts": dict(role_counts),
             "thickness_median": _median(thicknesses) if thicknesses else None,

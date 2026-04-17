@@ -452,7 +452,9 @@ def _angle_plausible(
     colinear_a = float(np.dot(-dir_a, gap_unit))
     colinear_b = float(np.dot(dir_b, gap_unit))  # B's wall extends toward A
     # Accept if BOTH walls roughly continue toward the gap (both dot products near +1).
-    cos_threshold = math.cos(math.radians(90.0 - max_drift))
+    # Allow up to max_drift degrees off-axis, so the threshold is cos(max_drift)
+    # (≈0.97 for 15°), not cos(90-max_drift) which would let 75° off-axis through.
+    cos_threshold = math.cos(math.radians(max_drift))
     if colinear_a > cos_threshold and colinear_b > cos_threshold:
         return True
 

@@ -131,11 +131,12 @@ def _wet_wall_rule(
                     _assign(data, "wet_wall", 0.7, "wet_wall_bounds_wet_room", config)
                     newly.add((u, v, key))
 
-    # Fallback: legacy text-label proximity (emit with lower confidence)
-    if not newly:
-        labels = [str(lbl).upper() for lbl in (config.get("wet_zone_labels") or [])]
-        if not labels or not text_blocks:
-            return newly
+    # Fallback: legacy text-label proximity for edges not reached by the
+    # room-based pass. Room detection is inherently lossy (unpolygonized
+    # regions produce no room), so we must also catch wet walls around
+    # text-labeled wet zones that fell outside any detected room polygon.
+    labels = [str(lbl).upper() for lbl in (config.get("wet_zone_labels") or [])]
+    if labels and text_blocks:
         proximity = float(config["wet_zone_proximity"])
         wet_zones: list[tuple[float, float, float, float]] = []
         for tb in text_blocks:
@@ -147,17 +148,16 @@ def _wet_wall_rule(
                 wet_zones.append(
                     (x0 - proximity, y0 - proximity, x1 + proximity, y1 + proximity)
                 )
-        if not wet_zones:
-            return newly
-        for u, v, key, data in graph.edges(keys=True, data=True):
-            if (u, v, key) in assigned:
-                continue
-            mx, my = _edge_midpoint(data)
-            for x0, y0, x1, y1 in wet_zones:
-                if x0 <= mx <= x1 and y0 <= my <= y1:
-                    _assign(data, "wet_wall", 0.5, "wet_wall_text_label_proximity", config)
-                    newly.add((u, v, key))
-                    break
+        if wet_zones:
+            for u, v, key, data in graph.edges(keys=True, data=True):
+                if (u, v, key) in assigned or (u, v, key) in newly:
+                    continue
+                mx, my = _edge_midpoint(data)
+                for x0, y0, x1, y1 in wet_zones:
+                    if x0 <= mx <= x1 and y0 <= my <= y1:
+                        _assign(data, "wet_wall", 0.5, "wet_wall_text_label_proximity", config)
+                        newly.add((u, v, key))
+                        break
     return newly
 
 

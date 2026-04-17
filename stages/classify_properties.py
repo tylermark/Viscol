@@ -81,7 +81,8 @@ def classify_paths(extracted: dict, config: dict) -> dict:
     min_required = int(config.get("wall_candidate_min_count", 100))
     # Only fall back on substantial drawings — tiny inputs (tests, synthetic)
     # legitimately have few wall candidates and shouldn't trigger the fallback.
-    if n_wall_candidates < min_required and len(paths) > 500:
+    min_paths_for_fallback = int(config.get("wall_fallback_min_paths", 500))
+    if n_wall_candidates < min_required and len(paths) > min_paths_for_fallback:
         _length_fallback_classify(paths, config)
     return extracted
 

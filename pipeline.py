@@ -103,16 +103,21 @@ def run(
     )
 
     errors = validate(doc)
+    output_path = output_dir / f"{pdf_path.stem}.json"
+
     if errors:
-        # Emit to stderr but still write the JSON so we can debug
-        sys.stderr.write(
-            "WARN: schema validation returned errors:\n  - "
-            + "\n  - ".join(errors[:20])
-            + (f"\n  ... and {len(errors) - 20} more" if len(errors) > 20 else "")
-            + "\n"
+        # Write the invalid doc to a debug sidecar for inspection, then fail loudly
+        # so callers/CI never silently ingest data that doesn't satisfy the schema.
+        debug_path = output_path.with_name(f"{output_path.stem}.invalid.json")
+        with debug_path.open("w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2)
+        preview = "\n  - ".join(errors[:20])
+        suffix = f"\n  ... and {len(errors) - 20} more" if len(errors) > 20 else ""
+        raise ValueError(
+            f"Pipeline output failed schema validation ({len(errors)} errors); "
+            f"invalid output written to {debug_path}:\n  - {preview}{suffix}"
         )
 
-    output_path = output_dir / f"{pdf_path.stem}.json"
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2)
 

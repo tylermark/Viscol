@@ -22,6 +22,7 @@ def _valid_doc() -> dict:
                 "text_regions": 1,
                 "grid_lines": 0,
                 "junctions": 2,
+                "cross_references": 0,
             },
         },
         "rooms": [
@@ -174,13 +175,13 @@ def test_room_references_unknown_segment_fails():
     assert any("ghost" in e for e in errs)
 
 
-def test_wall_adjacent_to_unknown_room_passes():
-    """adjacent_room_ids is informational — not schema-validated to reference real rooms."""
+def test_wall_adjacent_to_unknown_room_fails():
+    """adjacent_room_ids must reference real room_ids — the module docstring
+    promises this validation, and a dangling reference indicates stage drift."""
     doc = _valid_doc()
     doc["walls"][0]["topology"]["adjacent_room_ids"] = ["ghost-room"]
     errs = validate(doc)
-    # No validation on adjacent_room_ids content beyond "list"
-    assert errs == []
+    assert any("ghost-room" in e and "adjacent_room_ids" in e for e in errs)
 
 
 def test_text_region_enclosing_unknown_room_fails():

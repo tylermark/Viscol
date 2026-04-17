@@ -365,8 +365,41 @@ def validate(doc: dict) -> list[str]:
             if eid and eid not in known_linkable:
                 errs.append(f"text_regions[{i}].linked_entity_ids: unknown entity_id '{eid}'")
 
+    # Wall adjacent_room_ids and connected_segment_ids reference IDs we only
+    # know after all entities are collected, so they're validated here.
+    for i, seg in enumerate(doc["walls"]):
+        top = seg.get("topology", {})
+        adj = top.get("adjacent_room_ids")
+        if isinstance(adj, list):
+            for rid in adj:
+                if rid not in room_ids:
+                    errs.append(
+                        f"walls[{i}].topology.adjacent_room_ids: unknown room_id '{rid}'"
+                    )
+        csids = top.get("connected_segment_ids")
+        if isinstance(csids, list):
+            for sid in csids:
+                if sid not in segment_ids:
+                    errs.append(
+                        f"walls[{i}].topology.connected_segment_ids: unknown segment_id '{sid}'"
+                    )
+
+    for i, j in enumerate(doc["junctions"]):
+        csids = j.get("connected_segment_ids")
+        if isinstance(csids, list):
+            for sid in csids:
+                if sid not in segment_ids:
+                    errs.append(
+                        f"junctions[{i}].connected_segment_ids: unknown segment_id '{sid}'"
+                    )
+
+    opening_ids: set[str] = set()
     for i, op in enumerate(doc["openings"]):
-        _validate_opening(i, op, segment_ids, room_ids, errs)
+        oid = _validate_opening(i, op, segment_ids, room_ids, errs)
+        if oid:
+            if oid in opening_ids:
+                errs.append(f"openings[{i}].opening_id: duplicate '{oid}'")
+            opening_ids.add(oid)
 
     for i, cr in enumerate(doc["cross_references"]):
         _validate_cross_ref(i, cr, text_region_ids, errs)
@@ -381,6 +414,7 @@ def validate(doc: dict) -> list[str]:
             "text_regions": len(doc["text_regions"]),
             "grid_lines": len(doc["grid_lines"]),
             "junctions": len(doc["junctions"]),
+            "cross_references": len(doc["cross_references"]),
         }
         for k, v in expected.items():
             if ec.get(k) != v:

@@ -126,6 +126,7 @@ def assemble(
                 "text_regions": len(text_regions),
                 "grid_lines": len(grid_lines),
                 "junctions": len(junctions_out),
+                "cross_references": len(cross_references),
             },
         },
         "rooms": rooms_out,

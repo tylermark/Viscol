@@ -74,8 +74,8 @@ def detect_openings(
     config: dict,
 ) -> list[dict]:
     """Detect door openings from arc primitives and link them to walls/rooms."""
-    chord_min = float(config["door_arc_radius_min"])
-    chord_max = float(config["door_arc_radius_max"])
+    chord_min = float(config["door_arc_chord_min"])
+    chord_max = float(config["door_arc_chord_max"])
     door_to_wall = float(config["door_to_wall_distance"])
 
     walls: dict[str, dict] = {}

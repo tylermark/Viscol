@@ -123,14 +123,20 @@ def detect_grid(
             canonical = round((cand["start"][0] + cand["end"][0]) / 2.0)
         key = (cand["axis"], cand["label"], canonical)
         if key in seen_keys:
-            # Merge: keep whichever candidate is longer
+            # Merge: keep whichever candidate is longer, but always link this
+            # candidate's label_region to the preserved grid_id — the label may
+            # differ from the one that first created the entry.
             existing_idx = seen_keys[key]
             existing = grid_lines[existing_idx]
+            grid_id = existing["grid_id"]
             new_len = _line_length([cand["start"], cand["end"]])
             existing_len = _line_length([existing["start"], existing["end"]])
             if new_len > existing_len:
-                cand["grid_id"] = existing["grid_id"]  # preserve id
-                grid_lines[existing_idx] = {**cand, "grid_id": existing["grid_id"]}
+                grid_lines[existing_idx] = {**cand, "grid_id": grid_id}
+            if label_region is not None:
+                linked = label_region.setdefault("linked_entity_ids", [])
+                if grid_id not in linked:
+                    linked.append(grid_id)
             continue
         entry = {"grid_id": str(uuid.uuid4()), **cand}
         grid_lines.append(entry)

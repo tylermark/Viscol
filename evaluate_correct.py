@@ -163,7 +163,7 @@ def evaluate(
 
     # Sort by length descending so longer (more reliable) walls claim GT first.
     sorted_preds = sorted(
-        pred["segments"],
+        pred["walls"],
         key=lambda s: s["geometry"]["centerline_length"],
         reverse=True,
     )
@@ -184,7 +184,7 @@ def evaluate(
 
     matched_gt = claimed_gt
 
-    n_pred = len(pred["segments"])
+    n_pred = len(pred["walls"])
     n_gt_segs = len(gt_segs)
     n_gt_walls_estimated = n_gt_segs // 2
     n_matched_gt = len(matched_gt)

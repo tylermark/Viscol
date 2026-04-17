@@ -111,18 +111,22 @@ def detect_rooms(
 
         room_type, matched_substring = _classify_room_type(label_texts, type_patterns)
 
-        # Room name/number: split the first non-empty label into number + name if possible
+        # Room name/number: split the first non-empty label into number + name if possible.
+        # A label that matches the room-number pattern (e.g. "101", "203a") is a number —
+        # it must never fall through to room_name, even when room_number is already set.
         room_name: str | None = None
         room_number: str | None = None
         for txt in label_texts:
             candidate = re.match(r"^\s*([0-9]{2,4}[a-zA-Z]?)\s*$", txt)
-            if candidate and room_number is None:
-                room_number = candidate.group(1)
-            elif txt.strip() and room_name is None:
+            if candidate:
+                if room_number is None:
+                    room_number = candidate.group(1)
+                continue
+            if txt.strip() and room_name is None:
                 room_name = txt.strip()
 
         # Walls that bound this room (centerline midpoint within small tolerance of poly boundary)
-        tolerance = float(config.get("junction_snap_distance", 3.0)) * 3.0
+        tolerance = float(config["room_boundary_tolerance"])
         bounding_segment_ids: list[str] = []
         for segment_id, wall_data in walls.items():
             m = Point(*_wall_midpoint(wall_data))

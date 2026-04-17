@@ -190,7 +190,7 @@ def run(
     with pipeline_output.open("r", encoding="utf-8") as f:
         doc_data = json.load(f)
 
-    segments = doc_data["segments"]
+    segments = doc_data["walls"]
     junctions = doc_data["junctions"]
     role_counts: dict[str, int] = {}
     for s in segments:

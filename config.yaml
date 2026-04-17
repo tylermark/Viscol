@@ -12,6 +12,7 @@ wall_color_max_darkness: 0.3          # perceived lightness — walls must be da
 
 # Stage 2 — fallback when stroke width is uninformative (v0.4.1)
 wall_candidate_min_count: 100         # if fewer than this many wall_candidates after primary pass, retry with length-based fallback
+wall_fallback_min_paths: 500          # only run fallback on drawings with more than this many paths (tiny/synthetic inputs skip it)
 wall_fallback_min_length: 20.0        # pt — in fallback mode, any solid dark line longer than this is a wall_candidate
 wall_fallback_max_candidates: 1500    # cap on fallback-promoted candidates (longest-first) to keep Stage 3 O(n²) tractable
 
@@ -64,6 +65,7 @@ evaluation_match_proximity: 3.0       # pt — midpoint distance for matching se
 
 # Stage 5 — Room Detection (v0.6.0)
 room_min_area: 500.0                  # pt² — polygons smaller than this are ignored (noise from tiny enclosures)
+room_boundary_tolerance: 9.0          # pt — wall centerline midpoint within this of a room polygon boundary → bounding wall
 room_type_label_patterns:             # case-insensitive substring matches on text labels inside a room polygon
   bathroom: ["BATH", "WC", "RESTROOM", "POWDER", "TOILET", "LAVATORY"]
   kitchen: ["KITCHEN", "KITCHENETTE", "KIT"]
@@ -78,14 +80,14 @@ room_type_label_patterns:             # case-insensitive substring matches on te
 # Stage 6 — Opening Detection (v0.6.0)
 door_arc_span_min_deg: 60.0           # degrees — minimum arc span for a door swing
 door_arc_span_max_deg: 120.0          # degrees — maximum arc span
-door_arc_radius_min: 10.0             # pt — minimum radius (too small = symbol/callout)
-door_arc_radius_max: 200.0            # pt — maximum radius (too large = decorative)
+door_arc_chord_min: 10.0              # pt — minimum chord length (straight-line distance between arc endpoints); too small = symbol/callout
+door_arc_chord_max: 200.0             # pt — maximum chord length; too large = decorative
 door_to_wall_distance: 15.0           # pt — max distance from arc to wall centerline to associate
 
 # Stage 7 — Text Classification (v0.6.0)
 text_room_number_pattern: "^[0-9]{2,4}[a-zA-Z]?$"             # matches: 204, 203a, 1101
 text_sheet_callout_pattern: "^[A-Z][0-9]+[.]?[0-9]*[a-z]?$"   # matches: A302, A7.1, A102a, E2.2
-text_dimension_pattern: "^[0-9]+['\\\"\\-\\s/]+$"             # matches dimension strings like 28'-6", 4'-4 5/8"
+text_dimension_pattern: "^[0-9]+['\\\"\\-\\s/0-9]+$"          # matches dimension strings like 28'-6", 4'-4 5/8"
 text_grid_label_pattern: "^[A-Z]{1,2}$|^[0-9]{1,2}$|^[A-Z][.][0-9]+$"  # single letter, single digit, A.1, B.2
 text_grid_label_blocklist: ["DW", "DN", "UP", "W", "D", "REF", "WC", "WD", "DR", "TV", "AC", "EQ", "FD", "FX", "GF", "CL", "CO", "EX", "VT"]  # fixture/code abbreviations that look like grid labels
 
