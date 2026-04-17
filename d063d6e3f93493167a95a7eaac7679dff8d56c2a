@@ -1,0 +1,70 @@
+stages/detect_grid.py
+  23c064f96e8ae589 34,80,95,111
+evaluate_all_correct.py
+  23c064f96e8ae589 62-73,79-81
+stages/build_topology.py
+  23c064f96e8ae589 537-552
+CLAUDE.md
+  23c064f96e8ae589 17-18,43,106,191-193,202-203,216,220-222,278
+config.yaml
+  23c064f96e8ae589 52,99-102
+pipeline.py
+  23c064f96e8ae589 106-109
+evaluate_correct.py
+  23c064f96e8ae589 59-75,227-230,232,251-253,256
+visualize.py
+  23c064f96e8ae589 211
+tests/test_semantics.py
+  23c064f96e8ae589 84-87,93-95,97-98,104-106
+stages/classify_properties.py
+  23c064f96e8ae589 36,50,56-57,59,76,79,126
+tests/test_schema_validator.py
+  23c064f96e8ae589 85-86
+stages/classify_text.py
+  23c064f96e8ae589 41-42,44,57,61,68,72,76,81,86,88,107,109-112,122-123,136,141-142
+benchmark.py
+  23c064f96e8ae589 165-171
+schema_validator.py
+  23c064f96e8ae589 78,81,85-89,239-253,269-271,291,294-298,302-308,438,440-444
+stages/detect_walls.py
+  23c064f96e8ae589 412-415,434-438,440-454
+stages/_config.py
+  23c064f96e8ae589 26,35,47,51-52,54-55
+stages/detect_rooms.py
+  23c064f96e8ae589 80,121-122,125-127,129-130
+stages/assign_semantics.py
+  23c064f96e8ae589 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "d063d6e3f93493167a95a7eaac7679dff8d56c2a",
+  "prompts": {
+    "23c064f96e8ae589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089f9f16-8387-4d9c-b167-ae35b1fce6df",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 227,
+      "total_deletions": 94,
+      "accepted_lines": 4598,
+      "overriden_lines": 3
+    },
+    "cf85da87ee5d77b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "520ab9c8-2e5c-47c6-b2c4-2d56e43e4ec0",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 100,
+      "overriden_lines": 3
+    }
+  }
+}
