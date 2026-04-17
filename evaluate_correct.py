@@ -256,6 +256,7 @@ def evaluate(
         "soft_tp": soft_tp,
         "soft_precision": round(soft_precision, 3),
         "soft_recall_walls": round(soft_recall, 3),
+        "soft_recall_segments": round(soft_recall, 3),
         "soft_f1": round(soft_f1, 3),
         "perp_tolerance_pt": perp_tol,
         "parallel_tolerance_deg": parallel_tol_deg,
