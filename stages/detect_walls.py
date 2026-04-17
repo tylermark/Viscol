@@ -409,7 +409,10 @@ def detect_walls(classified: dict, config: dict) -> tuple[list[dict], list[dict]
     # Skipped for small inputs (tests, synthetic) where too few endpoints
     # exist to form reliable junction clusters.
     dropped_by_anchor: list[dict] = []
-    if bool(config.get("junction_anchor_enabled", False)) and len(segs) >= 20:
+    anchor_enabled = bool(config.get("junction_anchor_enabled", False))
+    anchor_tag_only = bool(config.get("junction_anchor_tag_only", False))
+    min_segments = int(config["junction_anchor_min_segments"])
+    if (anchor_enabled or anchor_tag_only) and len(segs) >= min_segments:
         snap_radius = float(config["junction_raw_snap_radius"])
         min_cluster = int(config["junction_anchor_min_cluster_size"])
         snap_tol = float(config["junction_anchor_snap_tolerance"])
@@ -428,19 +431,27 @@ def detect_walls(classified: dict, config: dict) -> tuple[list[dict], list[dict]
                 # free-floating pair (cabinet, fixture, decoration).
                 if snap_start is None and snap_end is None:
                     w.setdefault("rules_failed", []).append("no_junction_anchor")
-                    dropped_by_anchor.append(w)
+                    if anchor_enabled and not anchor_tag_only:
+                        dropped_by_anchor.append(w)
+                        continue
+                    # tag-only mode: keep the wall but carry the failed tag
+                    anchored.append(w)
                     continue
-                if snap_start is not None:
-                    w["start"] = [float(snap_start[0]), float(snap_start[1])]
-                if snap_end is not None:
-                    w["end"] = [float(snap_end[0]), float(snap_end[1])]
-                new_len = float(np.linalg.norm(
-                    np.asarray(w["end"]) - np.asarray(w["start"])
-                ))
-                if new_len < 1e-6:
-                    dropped_by_anchor.append(w)
-                    continue
-                w["length"] = new_len
+                # At least one endpoint snaps. In enabled (filter) mode we
+                # modify geometry; in tag-only mode we only add a signal tag
+                # and leave the wall untouched.
+                if anchor_enabled and not anchor_tag_only:
+                    if snap_start is not None:
+                        w["start"] = [float(snap_start[0]), float(snap_start[1])]
+                    if snap_end is not None:
+                        w["end"] = [float(snap_end[0]), float(snap_end[1])]
+                    new_len = float(np.linalg.norm(
+                        np.asarray(w["end"]) - np.asarray(w["start"])
+                    ))
+                    if new_len < 1e-6:
+                        dropped_by_anchor.append(w)
+                        continue
+                    w["length"] = new_len
                 w.setdefault("rules_passed", []).append(
                     "junction_anchored_both"
                     if snap_start is not None and snap_end is not None

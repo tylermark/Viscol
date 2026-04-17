@@ -38,10 +38,10 @@ def _first_match_room_label(
     return None, None
 
 
-def _classify_one(text: str, config: dict) -> tuple[str, list[str]]:
-    """Return (classification, list_of_sheet_references_found_in_text)."""
+def _classify_one(text: str, config: dict) -> tuple[str, list[str], str]:
+    """Return (classification, sheet_references_found_in_text, rule_triggered)."""
     if not text or not text.strip():
-        return "unknown", []
+        return "unknown", [], "empty_text"
     t = text.strip()
 
     # Collect any sheet-callout-looking substrings (for cross-reference resolution).
@@ -54,38 +54,38 @@ def _classify_one(text: str, config: dict) -> tuple[str, list[str]]:
 
     # Room number: short alphanumeric like 204, 203a
     if re.match(config["text_room_number_pattern"], t):
-        return "room_number", sheet_refs
+        return "room_number", sheet_refs, "room_number_pattern"
 
     # Sheet callout: whole text IS a sheet identifier
     if sheet_pattern.match(t):
-        return "sheet_callout", sheet_refs
+        return "sheet_callout", sheet_refs, "sheet_callout_pattern"
 
     # Grid label: single letter / single digit / A.1 — but exclude common
     # fixture/callout abbreviations that match the same pattern (DW, DN, REF, UP...).
     if re.match(config["text_grid_label_pattern"], t):
         blocklist = {str(x).upper() for x in (config.get("text_grid_label_blocklist") or [])}
         if t.upper() not in blocklist:
-            return "grid_label", sheet_refs
+            return "grid_label", sheet_refs, "grid_label_pattern"
 
     # Dimension
     if re.match(config["text_dimension_pattern"], t):
-        return "dimension", sheet_refs
+        return "dimension", sheet_refs, "dimension_pattern"
 
     # Wall-schedule tag (W-3, C2)
     if _WALL_SCHEDULE_PATTERN.match(t):
-        return "wall_schedule_tag", sheet_refs
+        return "wall_schedule_tag", sheet_refs, "wall_schedule_tag_pattern"
 
     # Room label — must match a room-type pattern
     room_type, _matched = _first_match_room_label(t, config.get("room_type_label_patterns") or {})
     if room_type is not None:
-        return "room_label", sheet_refs
+        return "room_label", sheet_refs, "room_label_pattern"
 
     # Title vs. note heuristic: long text with very large bbox was historically
     # a title, but we don't have bbox area here. Default to note for multi-word.
     if len(t.split()) >= 2:
-        return "note", sheet_refs
+        return "note", sheet_refs, "multiword_note_heuristic"
 
-    return "unknown", sheet_refs
+    return "unknown", sheet_refs, "no_pattern_match"
 
 
 def classify_text_regions(
@@ -104,8 +104,12 @@ def classify_text_regions(
         region_id = tb.get("_text_region_id") or str(uuid.uuid4())
         tb["_text_region_id"] = region_id
         text = (tb.get("text") or "").strip()
-        classification, sheet_refs = _classify_one(text, config)
+        classification, sheet_refs, rule = _classify_one(text, config)
         bbox = tb.get("bbox") or [0, 0, 0, 0]
+        # A text region whose role depends on an external sheet (sheet_callout
+        # or any embedded sheet reference) can't be confirmed from this drawing
+        # alone — that's H2's empirical footprint on the text side.
+        requires_xdoc = bool(sheet_refs) or classification == "sheet_callout"
         regions.append(
             {
                 "text_region_id": region_id,
@@ -115,6 +119,8 @@ def classify_text_regions(
                 "references": [ref for ref in sheet_refs] if sheet_refs else [],
                 "enclosing_room_id": None,
                 "linked_entity_ids": [],
+                "rule_triggered": rule,
+                "requires_cross_document_validation": requires_xdoc,
             }
         )
         # Emit cross-references for sheet callouts (even if the text is only
@@ -127,10 +133,13 @@ def classify_text_regions(
                 detail = m.group(1)
             cross_refs.append(
                 {
+                    "cross_reference_id": str(uuid.uuid4()),
                     "source_text_region_id": region_id,
                     "target_sheet": ref,
                     "target_detail": detail,
                     "context": classification,
+                    "rule_triggered": "sheet_callout_token_in_text",
+                    "requires_cross_document_validation": True,
                 }
             )
 

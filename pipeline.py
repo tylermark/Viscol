@@ -103,7 +103,10 @@ def run(
     )
 
     errors = validate(doc)
-    output_path = output_dir / f"{pdf_path.stem}.json"
+    # Include the page number in the filename so different pages of a
+    # multi-page PDF can't clobber each other in output_dir.
+    page_suffix = "" if page_num is None else f"_p{page_num}"
+    output_path = output_dir / f"{pdf_path.stem}{page_suffix}.json"
 
     if errors:
         # Write the invalid doc to a debug sidecar for inspection, then fail loudly

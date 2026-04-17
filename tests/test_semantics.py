@@ -81,27 +81,29 @@ def test_default_interior_partition_for_isolated_wall():
     assert roles == ["interior_partition"] or roles == ["unknown"]
 
 
-def test_l_shaped_building_labels_all_outer_walls_exterior():
-    """v0.3.1: convex-hull-based exterior rule should catch all outer walls of an L-shape.
+def test_l_shaped_building_labels_most_outer_walls_exterior():
+    """v0.3.1: convex-hull-based exterior rule catches the hull-edge walls of
+    an L-shape but can miss the two reentrant-corner walls that lie interior
+    to the hull. We only require that the four hull-edge walls register.
 
     L-shape footprint: a 300x300 square with its bottom-right 150x150 corner removed.
     Walking the outer perimeter: (0,0)→(300,0)→(300,150)→(150,150)→(150,300)→(0,300)→(0,0).
     """
     walls = [
-        make_wall_record((0, 0), (300, 0)),        # bottom
-        make_wall_record((300, 0), (300, 150)),    # right-lower
-        make_wall_record((300, 150), (150, 150)),  # horizontal notch
+        make_wall_record((0, 0), (300, 0)),        # bottom (on hull)
+        make_wall_record((300, 0), (300, 150)),    # right-lower (on hull)
+        make_wall_record((300, 150), (150, 150)),  # horizontal notch (reentrant)
         make_wall_record((150, 150), (150, 300)),  # right-upper (reentrant)
-        make_wall_record((150, 300), (0, 300)),    # top
-        make_wall_record((0, 300), (0, 0)),        # left
+        make_wall_record((150, 300), (0, 300)),    # top (on hull)
+        make_wall_record((0, 300), (0, 0)),        # left (on hull)
     ]
     graph, _ = _build(walls)
     assign_semantics(graph, [], default_config())
     roles = _roles(graph)
     exterior_count = roles.count("exterior")
-    # All 6 perimeter segments should register as exterior under the convex-hull rule,
-    # with generous tolerance forgiving the reentrant-corner walls.
-    assert exterior_count >= 4, f"expected most perimeter walls exterior, got {exterior_count}: {roles}"
+    # Four hull-edge walls must register; reentrant-corner walls may or may not
+    # depending on tolerance.
+    assert exterior_count >= 4, f"expected at least 4 hull-edge walls exterior, got {exterior_count}: {roles}"
 
 
 def test_cross_doc_flag_invariant_on_bearing_wall():

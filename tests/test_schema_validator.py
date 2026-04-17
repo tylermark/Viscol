@@ -82,6 +82,8 @@ def _valid_doc() -> dict:
                 "references": [],
                 "enclosing_room_id": "room-1",
                 "linked_entity_ids": [],
+                "rule_triggered": "room_label_pattern",
+                "requires_cross_document_validation": False,
             }
         ],
         "grid_lines": [],

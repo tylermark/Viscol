@@ -49,6 +49,7 @@ demising_min_length: 200.0            # pt — walls longer than this crossing X
 semantic_min_confidence: 0.4          # below this → role downgraded to "unknown"
 wet_zone_proximity: 50.0              # pt — wall midpoint within this of a zone label = candidate wet wall
 bearing_min_continuous_length: 300.0  # pt — continuous corner-chain path length threshold
+exterior_tolerance: 9.0               # pt — wall midpoint within this of the convex-hull boundary → exterior (≈3 × junction_snap_distance)
 
 # Text labels that indicate wet zones (case-insensitive prefix match)
 wet_zone_labels:
@@ -95,3 +96,7 @@ text_grid_label_blocklist: ["DW", "DN", "UP", "W", "D", "REF", "WC", "WD", "DR",
 grid_line_min_length: 300.0           # pt — only long lines qualify as grid
 grid_label_proximity: 40.0            # pt — grid labels (A, 1, B.1) must be within this distance of line endpoint
 grid_endpoint_near_boundary: 50.0     # pt — grid lines typically terminate near the drawing boundary
+grid_line_axis_tolerance_deg: 5.0     # degrees — off-axis tolerance for horizontal/vertical classification
+
+# Stage 4 — Junction Anchoring (v0.5.0, continued)
+junction_anchor_min_segments: 20      # pt — skip anchoring for small inputs (tests, synthetic) where too few endpoints form reliable clusters

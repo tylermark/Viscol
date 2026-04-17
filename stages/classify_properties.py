@@ -33,7 +33,7 @@ def _nearest_text_distance(path: dict, text_blocks: list[dict]) -> float:
     return best
 
 
-def _classify_one(path: dict, text_blocks: list[dict], config: dict) -> tuple[str, float]:
+def _classify_one(path: dict, text_blocks: list[dict], config: dict) -> tuple[str, float, str]:
     width = float(path.get("stroke_width") or 0.0)
     is_dashed = bool(path.get("is_dashed"))
     lightness = _perceived_lightness(path.get("stroke_rgb"))
@@ -47,16 +47,16 @@ def _classify_one(path: dict, text_blocks: list[dict], config: dict) -> tuple[st
         width_score = min(1.0, (width - wall_min) / max(wall_min, 1e-6) + 0.5)
         color_score = 1.0 - (lightness / max(darkness_cap, 1e-6))
         confidence = max(0.5, min(1.0, 0.5 * width_score + 0.5 * color_score))
-        return "wall_candidate", confidence
+        return "wall_candidate", confidence, "stroke_weight_and_darkness"
 
     if width <= ann_max:
         near = _nearest_text_distance(path, text_blocks)
         if near <= dim_prox:
             confidence = max(0.4, min(0.9, 1.0 - near / max(dim_prox, 1e-6)))
-            return "dimension", confidence
-        return "annotation", 0.7
+            return "dimension", confidence, "thin_stroke_near_text"
+        return "annotation", 0.7, "thin_stroke_default"
 
-    return "unknown", 0.3
+    return "unknown", 0.3, "no_rule_match"
 
 
 def classify_paths(extracted: dict, config: dict) -> dict:
@@ -73,9 +73,10 @@ def classify_paths(extracted: dict, config: dict) -> dict:
     text_blocks = extracted.get("text_blocks") or []
     paths = extracted.get("paths") or []
     for path in paths:
-        ctype, confidence = _classify_one(path, text_blocks, config)
+        ctype, confidence, rule = _classify_one(path, text_blocks, config)
         path["candidate_type"] = ctype
         path["classification_confidence"] = float(confidence)
+        path["rule_triggered"] = rule
 
     n_wall_candidates = sum(1 for p in paths if p.get("candidate_type") == "wall_candidate")
     min_required = int(config.get("wall_candidate_min_count", 100))
@@ -122,3 +123,4 @@ def _length_fallback_classify(paths: list[dict], config: dict) -> None:
     for _length, path in qualifying[:fallback_max_count]:
         path["candidate_type"] = "wall_candidate"
         path["classification_confidence"] = 0.4  # lower than primary-pass walls
+        path["rule_triggered"] = "length_fallback_rescue"

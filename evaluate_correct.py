@@ -56,12 +56,23 @@ def _extract_red_segments(correct_pdf: Path, page_height: float, flip_y: bool) -
                     segs.append(GTSegment(a=a, b=b, length=length))
             elif kind == "re" and len(item) >= 2:
                 rect = item[1]
-                corners = [
-                    (rect.x0, rect.y0), (rect.x1, rect.y0),
-                    (rect.x1, rect.y1), (rect.x0, rect.y1),
-                ]
-                for i in range(4):
-                    p1, p2 = corners[i], corners[(i + 1) % 4]
+                rect_width = abs(rect.x1 - rect.x0)
+                rect_height = abs(rect.y1 - rect.y0)
+                # A hand-marked wall drawn as a rectangle has the two long
+                # parallel sides representing the wall; the two short sides
+                # are endcaps. Emit only the long pair so GT seg counts stay
+                # consistent with the "two parallel lines per wall" convention.
+                if rect_width >= rect_height:
+                    edge_pairs = [
+                        ((rect.x0, rect.y0), (rect.x1, rect.y0)),
+                        ((rect.x0, rect.y1), (rect.x1, rect.y1)),
+                    ]
+                else:
+                    edge_pairs = [
+                        ((rect.x0, rect.y0), (rect.x0, rect.y1)),
+                        ((rect.x1, rect.y0), (rect.x1, rect.y1)),
+                    ]
+                for p1, p2 in edge_pairs:
                     a = np.array([p1[0], page_height - p1[1] if flip_y else p1[1]], dtype=float)
                     b = np.array([p2[0], page_height - p2[1] if flip_y else p2[1]], dtype=float)
                     length = float(np.linalg.norm(b - a))
@@ -213,8 +224,12 @@ def evaluate(
                 soft_tp += 1
                 soft_claimed.add(idx)
                 break
+    # soft_tp is bounded above by n_pred (each prediction claims at most one
+    # GT line). Dividing by n_gt_segs would cap recall at 0.5 because GT
+    # walls are drawn as two parallel segments. Use the per-wall estimate
+    # instead so a soft_recall of 1.0 is theoretically reachable.
     soft_precision = soft_tp / n_pred if n_pred else 0.0
-    soft_recall = soft_tp / n_gt_segs if n_gt_segs else 0.0
+    soft_recall = soft_tp / n_gt_walls_estimated if n_gt_walls_estimated else 0.0
     soft_f1 = (
         2 * soft_precision * soft_recall / (soft_precision + soft_recall)
         if (soft_precision + soft_recall) else 0.0
@@ -233,10 +248,12 @@ def evaluate(
         "recall_walls": round(recall_walls, 3),
         "coverage_gt_segments": round(coverage_segs, 3),
         "f1": round(f1, 3),
-        # SOFT metrics (centerline near any GT line, no pair requirement):
+        # SOFT metrics (centerline near any GT line, no pair requirement).
+        # Recall is computed per estimated wall, not per raw GT segment, so a
+        # value of 1.0 is theoretically reachable with one prediction per wall.
         "soft_tp": soft_tp,
         "soft_precision": round(soft_precision, 3),
-        "soft_recall_segments": round(soft_recall, 3),
+        "soft_recall_walls": round(soft_recall, 3),
         "soft_f1": round(soft_f1, 3),
         "perp_tolerance_pt": perp_tol,
         "parallel_tolerance_deg": parallel_tol_deg,

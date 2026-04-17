@@ -534,6 +534,22 @@ def _perform_junction_merge(
         new_type = "x-junction"
     graph.nodes[jid_a]["junction_type"] = new_type
 
+    # Propagate the recomputed junction_type to every incident edge so that
+    # start_junction_type/end_junction_type on those edges stay consistent
+    # with the node (downstream semantic rules look at these edge fields).
+    for u, v, key, data in list(graph.edges(jid_a, keys=True, data=True)):
+        new_data = dict(data)
+        changed = False
+        if new_data.get("start_junction_id") == jid_a and new_data.get("start_junction_type") != new_type:
+            new_data["start_junction_type"] = new_type
+            changed = True
+        if new_data.get("end_junction_id") == jid_a and new_data.get("end_junction_type") != new_type:
+            new_data["end_junction_type"] = new_type
+            changed = True
+        if changed:
+            graph.remove_edge(u, v, key=key)
+            graph.add_edge(u, v, key=key, **new_data)
+
     # Rebuild junctions list entry for A; remove B's entry
     new_junctions = []
     for j in junctions:

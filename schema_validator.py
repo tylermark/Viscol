@@ -75,13 +75,18 @@ REQUIRED_OPENING_FIELDS = (
 REQUIRED_TEXT_REGION_FIELDS = (
     "text_region_id", "text", "bbox", "classification",
     "references", "enclosing_room_id", "linked_entity_ids",
+    "rule_triggered", "requires_cross_document_validation",
 )
 
-REQUIRED_GRID_FIELDS = ("grid_id", "axis", "label", "start", "end")
+REQUIRED_GRID_FIELDS = ("grid_id", "axis", "label", "start", "end", "rule_triggered")
 
 REQUIRED_JUNCTION_FIELDS = ("junction_id", "position", "junction_type", "connected_segment_ids")
 
-REQUIRED_CROSS_REF_FIELDS = ("source_text_region_id", "target_sheet", "target_detail", "context")
+REQUIRED_CROSS_REF_FIELDS = (
+    "cross_reference_id",
+    "source_text_region_id", "target_sheet", "target_detail", "context",
+    "rule_triggered", "requires_cross_document_validation",
+)
 
 
 def _require_keys(obj: dict, keys, path: str, errs: list) -> bool:
@@ -231,6 +236,21 @@ def _validate_text_region(
     # after all IDs (rooms, grid_lines) are collected.
     if not isinstance(region.get("linked_entity_ids"), list):
         errs.append(f"{p}.linked_entity_ids: expected list")
+    rule = region.get("rule_triggered")
+    if not isinstance(rule, str) or not rule:
+        errs.append(f"{p}.rule_triggered: expected non-empty string")
+    if not isinstance(region.get("requires_cross_document_validation"), bool):
+        errs.append(f"{p}.requires_cross_document_validation: expected bool")
+    # Any region that references an external sheet (or IS a sheet callout)
+    # cannot be confirmed from a single drawing — that's H2's footprint.
+    refs = region.get("references") or []
+    classification = region.get("classification")
+    must_flag = bool(refs) or classification == "sheet_callout"
+    if must_flag and region.get("requires_cross_document_validation") is not True:
+        errs.append(
+            f"{p}: classification='{classification}' with references={refs} "
+            "requires requires_cross_document_validation=true"
+        )
     return tid
 
 
@@ -246,6 +266,9 @@ def _validate_grid_line(i: int, g: dict, errs: list) -> str | None:
         errs.append(f"{p}.axis: '{g.get('axis')}' not in {sorted(ALLOWED_GRID_AXES)}")
     _validate_xy(g.get("start"), f"{p}.start", errs)
     _validate_xy(g.get("end"), f"{p}.end", errs)
+    rule = g.get("rule_triggered")
+    if not isinstance(rule, str) or not rule:
+        errs.append(f"{p}.rule_triggered: expected non-empty string")
     return gid
 
 
@@ -265,13 +288,24 @@ def _validate_junction(i: int, j: dict, errs: list) -> str | None:
     return jid
 
 
-def _validate_cross_ref(i: int, cr: dict, text_region_ids: set, errs: list) -> None:
+def _validate_cross_ref(i: int, cr: dict, text_region_ids: set, errs: list) -> str | None:
     p = f"cross_references[{i}]"
     if not _require_keys(cr, REQUIRED_CROSS_REF_FIELDS, p, errs):
-        return
+        return None
+    crid = cr.get("cross_reference_id")
+    if not isinstance(crid, str) or not crid:
+        errs.append(f"{p}.cross_reference_id: must be non-empty string")
+        return None
     src = cr.get("source_text_region_id")
     if src not in text_region_ids:
         errs.append(f"{p}.source_text_region_id: unknown text_region_id '{src}'")
+    rule = cr.get("rule_triggered")
+    if not isinstance(rule, str) or not rule:
+        errs.append(f"{p}.rule_triggered: expected non-empty string")
+    # Cross-references are always across documents by definition.
+    if cr.get("requires_cross_document_validation") is not True:
+        errs.append(f"{p}: cross_references must set requires_cross_document_validation=true")
+    return crid
 
 
 def validate(doc: dict) -> list[str]:
@@ -401,8 +435,13 @@ def validate(doc: dict) -> list[str]:
                 errs.append(f"openings[{i}].opening_id: duplicate '{oid}'")
             opening_ids.add(oid)
 
+    cross_reference_ids: set[str] = set()
     for i, cr in enumerate(doc["cross_references"]):
-        _validate_cross_ref(i, cr, text_region_ids, errs)
+        crid = _validate_cross_ref(i, cr, text_region_ids, errs)
+        if crid:
+            if crid in cross_reference_ids:
+                errs.append(f"cross_references[{i}].cross_reference_id: duplicate '{crid}'")
+            cross_reference_ids.add(crid)
 
     # Entity counts consistency
     ec = doc["metadata"].get("entity_counts", {})

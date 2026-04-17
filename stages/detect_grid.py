@@ -31,7 +31,7 @@ def _line_length(pts: list) -> float:
     return math.hypot(dx, dy)
 
 
-def _line_axis(pts: list, angle_tol_deg: float = 5.0) -> str | None:
+def _line_axis(pts: list, angle_tol_deg: float) -> str | None:
     if not pts or len(pts) < 2:
         return None
     dx = float(pts[-1][0] - pts[0][0])
@@ -77,6 +77,7 @@ def detect_grid(
     """Return grid_line records per §4."""
     min_length = float(config["grid_line_min_length"])
     label_prox = float(config["grid_label_proximity"])
+    angle_tol = float(config["grid_line_axis_tolerance_deg"])
 
     paths = extracted.get("paths") or []
     grid_lines: list[dict] = []
@@ -91,7 +92,7 @@ def detect_grid(
             continue
         if _line_length(pts) < min_length:
             continue
-        axis = _line_axis(pts)
+        axis = _line_axis(pts, angle_tol)
         if axis is None:
             continue
         p1, p2 = pts[0], pts[-1]
@@ -107,6 +108,7 @@ def detect_grid(
                 "label": label_text,
                 "start": [float(p1[0]), float(p1[1])],
                 "end": [float(p2[0]), float(p2[1])],
+                "rule_triggered": "long_axis_aligned_line_with_label",
             },
             label_region,
         ))

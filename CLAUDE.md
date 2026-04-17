@@ -14,8 +14,8 @@ This pipeline exists because the FM needs training signal. Drawings in the wild 
 
 Update the wiki path below to match your local LLM-Wiki folder location.
 
-```
-WIKI_PATH = "C:\Users\tyler\LLM-Wiki"
+```python
+WIKI_PATH = r"C:\Users\tyler\LLM-Wiki"
 ```
 
 ### Research context (read these before major decisions)
@@ -40,7 +40,7 @@ Wall F1 against hand-marked ground truth is a secondary diagnostic, not an optim
 
 ## 3. Pipeline architecture
 
-```
+```text
 Vector PDF (single page)
     │
     ▼
@@ -103,7 +103,7 @@ Structured graph JSON (one per drawing)
 
 The canonical output is a **structured graph per drawing**, FM-training-ready. Every field present on every entity; unknown values get `null`, not a missing key.
 
-```json
+```jsonc
 {
   "metadata": {
     "source_pdf": "filename.pdf",
@@ -188,7 +188,9 @@ The canonical output is a **structured graph per drawing**, FM-training-ready. E
       "classification": "room_label | room_number | sheet_callout | dimension | wall_schedule_tag | note | title | grid_label | unknown",
       "references": ["sheet_id_or_null"],
       "enclosing_room_id": "room_id or null",
-      "linked_entity_ids": ["wall_or_grid_id"]
+      "linked_entity_ids": ["wall_or_grid_id"],
+      "rule_triggered": "string",
+      "requires_cross_document_validation": false
     }
   ],
   "grid_lines": [
@@ -197,7 +199,8 @@ The canonical output is a **structured graph per drawing**, FM-training-ready. E
       "axis": "horizontal | vertical",
       "label": "A" | "1" | null,
       "start": [x, y],
-      "end": [x, y]
+      "end": [x, y],
+      "rule_triggered": "string"
     }
   ],
   "junctions": [
@@ -210,10 +213,13 @@ The canonical output is a **structured graph per drawing**, FM-training-ready. E
   ],
   "cross_references": [
     {
+      "cross_reference_id": "uuid-v4",
       "source_text_region_id": "text_region_id",
       "target_sheet": "A302",
       "target_detail": "1" | null,
-      "context": "room_label | sheet_callout | note"
+      "context": "room_label | sheet_callout | note",
+      "rule_triggered": "string",
+      "requires_cross_document_validation": true
     }
   ]
 }
@@ -269,7 +275,7 @@ Each coordinator-task benchmark has a precision/recall/F1 computed against a man
 
 ## 7. Project structure
 
-```
+```text
 project-root/
 ├── CLAUDE.md                  ← this file
 ├── config.yaml                ← all tunable thresholds

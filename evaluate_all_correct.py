@@ -59,24 +59,26 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     valid = [r for r in rows if "error" not in r]
-    if valid:
-        avg_p = sum(r["precision"] for r in valid) / len(valid)
-        avg_r = sum(r["recall_walls"] for r in valid) / len(valid)
-        avg_f = sum(r["f1"] for r in valid) / len(valid)
-        print()
-        print(f"AGGREGATE across {len(valid)} plans:")
-        print(f"  Mean precision: {avg_p:.3f}")
-        print(f"  Mean recall:    {avg_r:.3f}")
-        print(f"  Mean F1:        {avg_f:.3f}")
+    if not valid:
+        print(f"\nERROR: all {len(rows)} matched plans failed to evaluate.")
+        return 1
+
+    avg_p = sum(r["precision"] for r in valid) / len(valid)
+    avg_r = sum(r["recall_walls"] for r in valid) / len(valid)
+    avg_f = sum(r["f1"] for r in valid) / len(valid)
+    print()
+    print(f"AGGREGATE across {len(valid)} plans:")
+    print(f"  Mean precision: {avg_p:.3f}")
+    print(f"  Mean recall:    {avg_r:.3f}")
+    print(f"  Mean F1:        {avg_f:.3f}")
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
     md = ["# Per-plan evaluation against `*-correct.pdf` ground truth", ""]
     md.append(f"- Tolerances: perp={args.perp_tol}pt, parallel={args.parallel_tol}°")
     md.append(f"- Plans evaluated: {len(rows)}")
-    if valid:
-        md.append(f"- **Mean precision: {avg_p:.3f}**")
-        md.append(f"- **Mean recall: {avg_r:.3f}**")
-        md.append(f"- **Mean F1: {avg_f:.3f}**")
+    md.append(f"- **Mean precision: {avg_p:.3f}**")
+    md.append(f"- **Mean recall: {avg_r:.3f}**")
+    md.append(f"- **Mean F1: {avg_f:.3f}**")
     md.append("")
     md.append("| Plan | Pred | GT | TP | FP | FN | P | R | F1 |")
     md.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|")

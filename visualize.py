@@ -208,7 +208,7 @@ def run(
 
     pdf = fitz.open(source_pdf)
     target_page = 0 if page_num is None else page_num
-    if target_page >= pdf.page_count:
+    if target_page < 0 or target_page >= pdf.page_count:
         raise ValueError(f"--page {target_page} out of range [0, {pdf.page_count - 1}]")
     page = pdf[target_page]
     page_height = float(page.rect.height)

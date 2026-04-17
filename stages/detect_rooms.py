@@ -77,6 +77,7 @@ def detect_rooms(
     """
     min_area = float(config["room_min_area"])
     type_patterns = dict(config.get("room_type_label_patterns") or {})
+    room_number_regex = re.compile(config["text_room_number_pattern"])
 
     lines = _edges_to_lines(graph)
     if not lines:
@@ -117,13 +118,16 @@ def detect_rooms(
         room_name: str | None = None
         room_number: str | None = None
         for txt in label_texts:
-            candidate = re.match(r"^\s*([0-9]{2,4}[a-zA-Z]?)\s*$", txt)
+            stripped = txt.strip()
+            candidate = room_number_regex.fullmatch(stripped) if stripped else None
             if candidate:
                 if room_number is None:
-                    room_number = candidate.group(1)
+                    # Prefer a captured group when the pattern provides one,
+                    # otherwise the whole matched string.
+                    room_number = candidate.group(1) if candidate.groups() else candidate.group(0)
                 continue
-            if txt.strip() and room_name is None:
-                room_name = txt.strip()
+            if stripped and room_name is None:
+                room_name = stripped
 
         # Walls that bound this room (centerline midpoint within small tolerance of poly boundary)
         tolerance = float(config["room_boundary_tolerance"])

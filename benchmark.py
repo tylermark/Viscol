@@ -162,8 +162,13 @@ def run_benchmark(
             plan_result["pipeline_status"] = f"error: {type(exc).__name__}: {exc}"
         plan_result["wall_time_seconds"] = round(time.time() - t0, 2)
 
-        summary = _summarize_run(pdf, output_dir, load_config(config_path))
-        plan_result.update({k: v for k, v in summary.items() if k != "plan"})
+        # Only summarize on a fresh successful run — otherwise stale output JSONs
+        # from a previous benchmark would be silently counted as this run's result.
+        if plan_result["pipeline_status"] == "ok":
+            summary = _summarize_run(pdf, output_dir, load_config(config_path))
+            plan_result.update({k: v for k, v in summary.items() if k != "plan"})
+        else:
+            plan_result["status"] = "error"
 
         if gt_dir is not None:
             gt_csv = _match_ground_truth(pdf, gt_dir)

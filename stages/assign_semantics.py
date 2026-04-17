@@ -47,8 +47,7 @@ def _exterior_rule(graph: nx.MultiGraph, config: dict) -> set[tuple]:
     the hull over-approximates slightly but still captures all true exterior
     walls (they all lie on the hull by definition).
     """
-    snap = float(config["junction_snap_distance"])
-    exterior_tolerance = snap * 3.0  # generous — walls may be slightly inset from the hull
+    exterior_tolerance = float(config["exterior_tolerance"])
 
     lines = []
     for u, v, key, data in graph.edges(keys=True, data=True):
