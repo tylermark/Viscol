@@ -119,6 +119,122 @@ def _is_orthogonal(angle_deg: float, tol: float) -> bool:
     return min(d0, d90) <= tol
 
 
+def _find_thickness_modes(
+    thicknesses: list[float],
+    weights: list[float] | None,
+    bin_width: float,
+    min_support: float,
+    max_modes: int,
+) -> list[float]:
+    """Return centers of up to ``max_modes`` dominant thickness peaks.
+
+    v0.4.0 change: bins are now weighted by ``weights`` (typically the
+    centerline length of each pair). This biases mode-finding toward real
+    walls (which are long) over short noise pairs (cabinets, fixtures,
+    hatches) that happen to share a thickness. ``min_support`` is the
+    minimum *total weight* for a bin to qualify as a peak (in pt of length
+    if length-weighted).
+    """
+    if not thicknesses:
+        return []
+    arr = np.asarray(thicknesses, dtype=float)
+    if weights is None:
+        w = np.ones_like(arr)
+    else:
+        w = np.asarray(weights, dtype=float)
+    t_min = float(arr.min())
+    t_max = float(arr.max())
+    if t_max - t_min < bin_width:
+        return [float(np.average(arr, weights=w))]
+    n_bins = max(3, int(np.ceil((t_max - t_min) / bin_width)) + 1)
+    edges = np.linspace(t_min, t_min + n_bins * bin_width, n_bins + 1)
+    counts, _ = np.histogram(arr, bins=edges, weights=w)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    peaks: list[tuple[float, float]] = []
+    window = 3
+    for i in range(len(counts)):
+        c = float(counts[i])
+        if c < min_support:
+            continue
+        is_peak = True
+        for k in range(1, window + 1):
+            if i - k >= 0 and counts[i - k] >= c:
+                is_peak = False
+                break
+            if i + k < len(counts) and counts[i + k] > c:
+                is_peak = False
+                break
+        if is_peak:
+            peaks.append((c, float(centers[i])))
+
+    peaks.sort(key=lambda p: p[0], reverse=True)
+    return [center for _, center in peaks[:max_modes]]
+
+
+def _cluster_by_thickness(
+    walls: list[dict], config: dict
+) -> tuple[list[dict], list[dict]]:
+    """HFV2013 Assumption 4: global thickness consistency.
+
+    Histogram candidate thicknesses, find dominant peaks, reject pairs whose
+    thickness is outside ``tolerance * peak`` of any mode. Returns
+    ``(kept, dropped)``. If fewer than ``min_candidates`` walls exist, skips
+    clustering entirely (pure fallback).
+    """
+    min_candidates = int(config["thickness_cluster_min_candidates"])
+    if len(walls) < min_candidates:
+        return list(walls), []
+
+    bin_width = float(config["thickness_cluster_bin_width"])
+    min_support_count = int(config["thickness_cluster_min_support"])
+    tolerance = float(config["thickness_cluster_tolerance"])
+    max_modes = int(config["thickness_cluster_max_modes"])
+
+    # v0.4.0: length-weighted histogram. Real walls are long; cabinets and
+    # decorative pairs are short. Weighting by length surfaces wall thickness
+    # as the dominant mode even when noise pair COUNT is higher.
+    thicknesses = [float(w["thickness"]) for w in walls]
+    lengths = [float(w.get("length", 0.0)) for w in walls]
+    use_length_weighting = any(L > 0 for L in lengths)
+    if use_length_weighting:
+        weights = lengths
+        median_len = float(np.median([L for L in lengths if L > 0]))
+        min_support_weight = float(min_support_count) * max(median_len, 1.0)
+    else:
+        # Fallback for tests / synthetic data without length info.
+        weights = None
+        min_support_weight = float(min_support_count)
+
+    modes = _find_thickness_modes(
+        thicknesses,
+        weights=weights,
+        bin_width=bin_width,
+        min_support=min_support_weight,
+        max_modes=max_modes,
+    )
+    # v0.4.1: cap mode acceptance at a realistic max wall thickness.
+    # Spurious clusters at 30-40pt come from columns/symbols/decorative elements,
+    # not walls. GT data shows architectural walls cap at ~12pt for typical scales.
+    mode_max = float(config.get("thickness_cluster_mode_max_realistic", 18.0))
+    modes = [m for m in modes if m <= mode_max]
+    if not modes:
+        return list(walls), []
+
+    kept: list[dict] = []
+    dropped: list[dict] = []
+    for w in walls:
+        t = float(w["thickness"])
+        accepted = any(abs(t - m) <= tolerance * m for m in modes)
+        if accepted:
+            w.setdefault("rules_passed", []).append("thickness_cluster_member")
+            kept.append(w)
+        else:
+            w.setdefault("rules_failed", []).append("thickness_cluster_outlier")
+            dropped.append(w)
+    return kept, dropped
+
+
 def _centerlines_are_duplicate(w1: dict, w2: dict, tol: float) -> bool:
     c1 = (np.array(w1["start"]) + np.array(w1["end"])) / 2.0
     c2 = (np.array(w2["start"]) + np.array(w2["end"])) / 2.0
@@ -127,8 +243,95 @@ def _centerlines_are_duplicate(w1: dict, w2: dict, tol: float) -> bool:
     return _angular_diff(w1["angle_degrees"], w2["angle_degrees"]) <= tol
 
 
-def detect_walls(classified: dict, config: dict) -> list[dict]:
-    """Emit wall-segment records from classified paths."""
+def _detect_structural_junctions(
+    segs: list[dict], snap_radius: float, min_cluster_size: int
+) -> list[np.ndarray]:
+    """Junction-first detection (v0.5.0 Path A): find structural corners by
+    clustering raw wall-candidate line endpoints. Clusters of ``min_cluster_size``
+    or more endpoints (default 3) are declared structural junctions.
+
+    Returns a list of junction centroids. Each centroid is where 2+ walls meet
+    (at a corner, 4+ line endpoints converge; at a T, 3 converge from the
+    terminating wall + 2 continuing from the through-wall; at a clean
+    line-break on a single wall, only 2 converge — those are excluded).
+    """
+    if not segs:
+        return []
+    endpoints = []
+    for s in segs:
+        endpoints.append(np.asarray(s["a"], dtype=float))
+        endpoints.append(np.asarray(s["b"], dtype=float))
+    n = len(endpoints)
+
+    # Grid-bucket union-find clustering (same pattern as Stage 4)
+    buckets: dict[tuple[int, int], list[int]] = {}
+    for idx, p in enumerate(endpoints):
+        key = (int(p[0] // snap_radius), int(p[1] // snap_radius))
+        buckets.setdefault(key, []).append(idx)
+
+    parent = list(range(n))
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for (kx, ky), idxs in buckets.items():
+        neighbors: list[int] = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                neighbors.extend(buckets.get((kx + dx, ky + dy), []))
+        for i in idxs:
+            for j in neighbors:
+                if j <= i:
+                    continue
+                diff = endpoints[i] - endpoints[j]
+                if float(diff @ diff) <= snap_radius * snap_radius:
+                    union(i, j)
+
+    clusters: dict[int, list[np.ndarray]] = {}
+    for idx in range(n):
+        r = find(idx)
+        clusters.setdefault(r, []).append(endpoints[idx])
+
+    junctions: list[np.ndarray] = []
+    for pts in clusters.values():
+        if len(pts) >= min_cluster_size:
+            junctions.append(np.mean(np.stack(pts), axis=0))
+    return junctions
+
+
+def _snap_to_junction(
+    point: np.ndarray, junctions: list[np.ndarray], tolerance: float
+) -> np.ndarray | None:
+    """Return the nearest junction within tolerance, or None."""
+    best = None
+    best_d2 = tolerance * tolerance
+    for j in junctions:
+        diff = point - j
+        d2 = float(diff @ diff)
+        if d2 <= best_d2:
+            best_d2 = d2
+            best = j
+    return best
+
+
+def detect_walls(classified: dict, config: dict) -> tuple[list[dict], list[dict]]:
+    """Emit wall-segment records from classified paths.
+
+    Returns ``(kept, dropped_by_thickness)``. ``dropped_by_thickness`` contains
+    candidate pairs that Stage 3's filters rejected.
+
+    v0.5.0 Path A: junction-first anchoring. Before thickness clustering,
+    we detect structural junctions from raw wall-candidate endpoint
+    convergence. Candidate walls whose endpoints don't snap to pre-detected
+    junctions are dropped — these are floating wall fragments (cabinets,
+    fixtures, decorative pairs) with no structural context.
+    """
     paths = classified.get("paths") or []
     segs = _segments_from_paths(paths)
 
@@ -197,6 +400,74 @@ def detect_walls(classified: dict, config: dict) -> list[dict]:
             continue
         deduped.append(w)
 
+    # v0.5.0 Path A: junction-first anchoring. A real wall has both endpoints
+    # at structural corners (places where multiple wall lines converge).
+    # Walls whose centerline endpoints don't snap to pre-detected junctions
+    # are dropped. This drops floating pairs from cabinets/fixtures/decor
+    # at the source and produces a wall graph that's connected by construction.
+    #
+    # Skipped for small inputs (tests, synthetic) where too few endpoints
+    # exist to form reliable junction clusters.
+    dropped_by_anchor: list[dict] = []
+    anchor_enabled = bool(config.get("junction_anchor_enabled", False))
+    anchor_tag_only = bool(config.get("junction_anchor_tag_only", False))
+    min_segments = int(config["junction_anchor_min_segments"])
+    if (anchor_enabled or anchor_tag_only) and len(segs) >= min_segments:
+        snap_radius = float(config["junction_raw_snap_radius"])
+        min_cluster = int(config["junction_anchor_min_cluster_size"])
+        snap_tol = float(config["junction_anchor_snap_tolerance"])
+        junctions_xy = _detect_structural_junctions(segs, snap_radius, min_cluster)
+        if junctions_xy:
+            anchored: list[dict] = []
+            for w in deduped:
+                start = np.asarray(w["start"], dtype=float)
+                end = np.asarray(w["end"], dtype=float)
+                snap_start = _snap_to_junction(start, junctions_xy, snap_tol)
+                snap_end = _snap_to_junction(end, junctions_xy, snap_tol)
+                # Accept wall if at least ONE endpoint snaps to a structural
+                # junction. Peninsula walls (one end at a corner, other end
+                # free) are legitimate — interior half-walls, counter stubs,
+                # etc. A wall with NEITHER endpoint at a junction is a
+                # free-floating pair (cabinet, fixture, decoration).
+                if snap_start is None and snap_end is None:
+                    w.setdefault("rules_failed", []).append("no_junction_anchor")
+                    if anchor_enabled and not anchor_tag_only:
+                        dropped_by_anchor.append(w)
+                        continue
+                    # tag-only mode: keep the wall but carry the failed tag
+                    anchored.append(w)
+                    continue
+                # At least one endpoint snaps. In enabled (filter) mode we
+                # modify geometry; in tag-only mode we only add a signal tag
+                # and leave the wall untouched.
+                if anchor_enabled and not anchor_tag_only:
+                    if snap_start is not None:
+                        w["start"] = [float(snap_start[0]), float(snap_start[1])]
+                    if snap_end is not None:
+                        w["end"] = [float(snap_end[0]), float(snap_end[1])]
+                    new_start = np.asarray(w["start"], dtype=float)
+                    new_end = np.asarray(w["end"], dtype=float)
+                    new_len = float(np.linalg.norm(new_end - new_start))
+                    if new_len < 1e-6:
+                        w_id = w.get("segment_id", "unknown")
+                        raise ValueError(
+                            f"Wall {w_id} collapsed to zero length after junction snapping: "
+                            f"start={w['start']}, end={w['end']}"
+                        )
+                    w["length"] = new_len
+                    # Update angle_degrees to match new geometry
+                    dx = float(new_end[0] - new_start[0])
+                    dy = float(new_end[1] - new_start[1])
+                    w["angle_degrees"] = math.degrees(math.atan2(dy, dx)) % 180.0
+                w.setdefault("rules_passed", []).append(
+                    "junction_anchored_both"
+                    if snap_start is not None and snap_end is not None
+                    else "junction_anchored_one"
+                )
+                anchored.append(w)
+            deduped = anchored
+
+    # Legacy 2σ flag (kept for backward compatibility; purely informational)
     if deduped:
         thicknesses = np.array([w["thickness"] for w in deduped], dtype=float)
         mean_t = float(thicknesses.mean())
@@ -209,4 +480,8 @@ def detect_walls(classified: dict, config: dict) -> list[dict]:
                 if "thickness_consistent" not in w["rules_passed"]:
                     w["rules_passed"].append("thickness_consistent")
 
-    return deduped
+    # HFV2013 Assumption 4: global thickness clustering filter
+    kept, dropped_by_thickness = _cluster_by_thickness(deduped, config)
+    # Merge anchor drops into the dropped return for reporting in visualize
+    dropped_by_thickness.extend(dropped_by_anchor)
+    return kept, dropped_by_thickness

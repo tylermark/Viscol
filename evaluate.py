@@ -205,7 +205,7 @@ def run(
     with ground_truth.open("r", encoding="utf-8") as f:
         truth_doc = json.load(f)
 
-    pairs = _match_segments(pred_doc["segments"], truth_doc["segments"], proximity)
+    pairs = _match_segments(pred_doc["walls"], truth_doc["walls"], proximity)
     matrix = _confusion_matrix(pairs)
     metrics = _per_class_metrics(matrix)
     summary = _failure_summary(pairs)
@@ -247,10 +247,10 @@ def run(
         },
         "failures": summary,
         "role_counts_predicted": dict(
-            Counter(s["semantic"]["functional_role"] for s in pred_doc["segments"])
+            Counter(s["semantic"]["functional_role"] for s in pred_doc["walls"])
         ),
         "role_counts_truth": dict(
-            Counter(s["semantic"]["functional_role"] for s in truth_doc["segments"])
+            Counter(s["semantic"]["functional_role"] for s in truth_doc["walls"])
         ),
     }
     with json_path.open("w", encoding="utf-8") as f:

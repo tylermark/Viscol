@@ -1,4 +1,7 @@
-"""Floor plan semantic extraction pipeline — entry point.
+"""Phase 1 extraction pipeline — entry point.
+
+Produces the §4 structured graph per drawing (rooms + walls + openings +
+text_regions + grid_lines + junctions + cross_references).
 
 Usage:
     python pipeline.py <pdf_path> [--page N] [--config config.yaml] [--output-dir output]
@@ -8,132 +11,48 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
-from collections import Counter
-from datetime import date
 from pathlib import Path
-
-import networkx as nx
 
 from schema_validator import validate
 from stages._config import load_config
-from stages.assign_semantics import assign_semantics
-from stages.build_topology import build_topology
+from stages.extract_paths import extract_paths
 from stages.classify_properties import classify_paths
 from stages.detect_walls import detect_walls
-from stages.extract_paths import extract_paths
-
-
-PIPELINE_VERSION = "0.1.0"
-COORDINATE_SYSTEM = "pdf_points_bottom_left_origin"
+from stages.build_topology import build_topology
+from stages.detect_rooms import detect_rooms
+from stages.detect_openings import detect_openings
+from stages.classify_text import classify_text_regions
+from stages.detect_grid import detect_grid
+from stages.assign_semantics import assign_semantics
+from stages.assemble_graph import assemble, PIPELINE_VERSION
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Extract semantic wall segments from a vector PDF floor plan.")
+    parser = argparse.ArgumentParser(description="Phase 1 multi-entity extraction pipeline.")
     parser.add_argument("pdf_path", help="Path to the input vector PDF.")
-    parser.add_argument("--page", type=int, default=None, help="0-indexed page (required for multi-page PDFs).")
+    parser.add_argument("--page", type=int, default=None, help="0-indexed page (multi-page PDFs).")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml.")
-    parser.add_argument("--output-dir", default="output", help="Directory to write the JSON output.")
+    parser.add_argument("--output-dir", default="output", help="Directory for the JSON output.")
     return parser.parse_args(argv)
 
 
-def _segment_json(start_junction_id: str, end_junction_id: str, data: dict) -> dict:
-    s = data["start"]
-    e = data["end"]
-    length = float(math.hypot(e[0] - s[0], e[1] - s[1]))
-    dx, dy = e[0] - s[0], e[1] - s[1]
-    angle = math.degrees(math.atan2(dy, dx)) % 180.0
-    return {
-        "segment_id": data["segment_id"],
-        "geometry": {
-            "start": [float(s[0]), float(s[1])],
-            "end": [float(e[0]), float(e[1])],
-            "centerline_length": length,
-            "angle_degrees": float(angle),
-            "thickness": float(data.get("thickness", 0.0)),
-        },
-        "visual_properties": {
-            "line_weight": float(data.get("stroke_width", 0.0)),
-            "color_rgb": list(data.get("color_rgb") or [0.0, 0.0, 0.0]),
-            "is_dashed": bool(data.get("is_dashed", False)),
-            "layer_name": data.get("layer_name"),
-        },
-        "topology": {
-            "start_junction_id": start_junction_id,
-            "end_junction_id": end_junction_id,
-            "start_junction_type": data.get("start_junction_type"),
-            "end_junction_type": data.get("end_junction_type"),
-            "connected_segment_ids": list(data.get("connected_segment_ids") or []),
-        },
-        "semantic": {
-            "functional_role": data.get("functional_role", "unknown"),
-            "confidence": float(data.get("confidence", 0.0)),
-            "rule_triggered": data.get("rule_triggered"),
-            "requires_cross_document_validation": bool(
-                data.get("requires_cross_document_validation", False)
-            ),
-        },
-    }
-
-
-def _serialize(
-    graph: nx.MultiGraph,
-    junctions: list[dict],
-    source_pdf: str,
-) -> dict:
-    segments = [
-        _segment_json(u, v, data)
-        for u, v, _, data in graph.edges(keys=True, data=True)
-    ]
-    segments.sort(key=lambda s: s["segment_id"])
-    junctions_out = [
-        {
-            "junction_id": j["junction_id"],
-            "position": list(j["position"]),
-            "junction_type": j["junction_type"],
-            "connected_segment_ids": list(j["connected_segment_ids"]),
-        }
-        for j in junctions
-    ]
-    junctions_out.sort(key=lambda j: j["junction_id"])
-    return {
-        "metadata": {
-            "source_pdf": source_pdf,
-            "extraction_date": date.today().isoformat(),
-            "pipeline_version": PIPELINE_VERSION,
-            "total_segments": len(segments),
-            "coordinate_system": COORDINATE_SYSTEM,
-        },
-        "segments": segments,
-        "junctions": junctions_out,
-    }
-
-
-def _print_summary(
-    pdf_path: Path,
-    n_paths: int,
-    n_wall_candidates: int,
-    n_walls: int,
-    n_junctions: int,
-    role_counts: Counter,
-    output_path: Path,
-) -> None:
-    print(f"Processed: {pdf_path.name}")
-    print(f"  Paths extracted: {n_paths:,}")
-    print(f"  Wall candidates: {n_wall_candidates:,}")
-    print(f"  Confirmed walls: {n_walls:,}")
-    print(f"  Junctions: {n_junctions:,}")
-    print("  Semantic assignments:")
-
-    order = ["exterior", "demising", "interior_partition", "wet_wall", "bearing_wall", "unknown"]
-    label_width = max(len(o) for o in order) + 1
-    for role in order:
-        count = role_counts.get(role, 0)
-        suffix = ""
-        if role in ("wet_wall", "bearing_wall") and count > 0:
-            suffix = " (cross-doc validation required)"
-        print(f"    {role + ':':<{label_width + 1}} {count:<3}{suffix}")
+def _print_summary(pdf_path: Path, doc: dict, output_path: Path) -> None:
+    m = doc["metadata"]
+    counts = m["entity_counts"]
+    print(f"Processed: {pdf_path.name}  (v{m['pipeline_version']})")
+    print(f"  Page size: {m['page_size'][0]:.0f} x {m['page_size'][1]:.0f}")
+    print(f"  Entities extracted:")
+    for entity, count in counts.items():
+        print(f"    {entity:<15} {count:>6}")
+    if doc["rooms"]:
+        from collections import Counter
+        room_types = Counter(r.get("room_type") or "unknown" for r in doc["rooms"])
+        print(f"  Room types: {dict(room_types)}")
+    if doc["walls"]:
+        from collections import Counter
+        wall_roles = Counter(s["semantic"]["functional_role"] for s in doc["walls"])
+        print(f"  Wall roles: {dict(wall_roles)}")
     print(f"  Output: {output_path}")
 
 
@@ -149,39 +68,80 @@ def run(
 
     config = load_config(config_path)
 
+    # Stage 1-4: geometry pipeline (unchanged)
     extracted = extract_paths(pdf_path, page_num, config)
     classify_paths(extracted, config)
-    n_paths = len(extracted["paths"])
-    n_wall_candidates = sum(
-        1 for p in extracted["paths"] if p.get("candidate_type") == "wall_candidate"
+    walls, dropped_thickness = detect_walls(extracted, config)
+    graph, junctions, dropped_isolation = build_topology(walls, config)
+
+    # Stage 7 first (text classification) because rooms and grid need text_region_ids
+    text_regions, cross_references = classify_text_regions(extracted, config)
+
+    # Stage 5: rooms (needs walls graph + text_blocks with text_region_ids attached)
+    rooms = detect_rooms(graph, extracted.get("text_blocks") or [], config)
+
+    # Stage 6: openings (needs walls + rooms)
+    openings = detect_openings(extracted, graph, rooms, config)
+
+    # Stage 8: grid (needs text_regions)
+    grid_lines = detect_grid(extracted, text_regions, config)
+
+    # Stage 9: room-aware semantic assignment
+    assign_semantics(graph, extracted.get("text_blocks") or [], config, rooms=rooms)
+
+    # Stage 10: assemble the graph output
+    doc = assemble(
+        source_pdf_name=pdf_path.name,
+        page_size=tuple(extracted["page_size"]),
+        graph=graph,
+        junctions=junctions,
+        rooms=rooms,
+        openings=openings,
+        text_regions=text_regions,
+        grid_lines=grid_lines,
+        cross_references=cross_references,
     )
 
-    walls = detect_walls(extracted, config)
-    graph, junctions = build_topology(walls, config)
-    assign_semantics(graph, extracted["text_blocks"], config)
-
-    doc = _serialize(graph, junctions, pdf_path.name)
     errors = validate(doc)
+    # Include the page number in the filename so different pages of a
+    # multi-page PDF can't clobber each other in output_dir.
+    page_suffix = "" if page_num is None else f"_p{page_num}"
+    output_path = output_dir / f"{pdf_path.stem}{page_suffix}.json"
+
     if errors:
+        # Write the invalid doc to a debug sidecar for inspection, then fail loudly
+        # so callers/CI never silently ingest data that doesn't satisfy the schema.
+        debug_path = output_path.with_name(f"{output_path.stem}.invalid.json")
+        with debug_path.open("w", encoding="utf-8") as f:
+            json.dump(doc, f, indent=2)
+        preview = "\n  - ".join(errors[:20])
+        suffix = f"\n  ... and {len(errors) - 20} more" if len(errors) > 20 else ""
         raise ValueError(
-            "Pipeline output failed schema validation:\n  - "
-            + "\n  - ".join(errors)
+            f"Pipeline output failed schema validation ({len(errors)} errors); "
+            f"invalid output written to {debug_path}:\n  - {preview}{suffix}"
         )
 
-    output_path = output_dir / f"{pdf_path.stem}.json"
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2)
 
-    role_counts = Counter(s["semantic"]["functional_role"] for s in doc["segments"])
-    _print_summary(
-        pdf_path,
-        n_paths=n_paths,
-        n_wall_candidates=n_wall_candidates,
-        n_walls=len(doc["segments"]),
-        n_junctions=len(doc["junctions"]),
-        role_counts=role_counts,
-        output_path=output_path,
-    )
+    # Write dropped-candidate sidecar for visualization and debugging
+    dropped_path = output_path.with_name(f"{output_path.stem}_dropped.json")
+    dropped_doc = {
+        "metadata": {
+            "source_pdf": pdf_path.name,
+            "pipeline_version": PIPELINE_VERSION,
+            "dropped_counts": {
+                "dropped_by_thickness": len(dropped_thickness),
+                "dropped_by_isolation": len(dropped_isolation),
+            },
+        },
+        "dropped_by_thickness": dropped_thickness,
+        "dropped_by_isolation": dropped_isolation,
+    }
+    with dropped_path.open("w", encoding="utf-8") as f:
+        json.dump(dropped_doc, f, indent=2)
+
+    _print_summary(pdf_path, doc, output_path)
     return output_path
 
 
