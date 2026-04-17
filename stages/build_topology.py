@@ -522,16 +522,18 @@ def _perform_junction_merge(
         graph.remove_edge(u, v, key=key)
         graph.add_edge(u, v, key=key, **new_data)
 
-    # Update junction type on A based on new degree
-    new_degree = graph.degree(jid_a)
-    if new_degree == 1:
-        new_type = "endpoint"
-    elif new_degree == 2:
-        new_type = "corner"
-    elif new_degree == 3:
-        new_type = "t-junction"
-    else:
-        new_type = "x-junction"
+    # Update junction type on A based on incident edge directions
+    # (not just degree, since degree-2 can be either straight continuation or corner)
+    directions: list[np.ndarray] = []
+    pos_a = np.asarray(graph.nodes[jid_a]["position"], dtype=float)
+    for u, v, _key, _data in graph.edges(jid_a, keys=True, data=True):
+        other = v if u == jid_a else u
+        other_pos = np.asarray(graph.nodes[other]["position"], dtype=float)
+        vec = other_pos - pos_a
+        n = float(np.linalg.norm(vec))
+        if n > 1e-9:
+            directions.append(vec / n)
+    new_type = _classify_junction(directions)
     graph.nodes[jid_a]["junction_type"] = new_type
 
     # Propagate the recomputed junction_type to every incident edge so that

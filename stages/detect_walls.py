@@ -445,13 +445,20 @@ def detect_walls(classified: dict, config: dict) -> tuple[list[dict], list[dict]
                         w["start"] = [float(snap_start[0]), float(snap_start[1])]
                     if snap_end is not None:
                         w["end"] = [float(snap_end[0]), float(snap_end[1])]
-                    new_len = float(np.linalg.norm(
-                        np.asarray(w["end"]) - np.asarray(w["start"])
-                    ))
+                    new_start = np.asarray(w["start"], dtype=float)
+                    new_end = np.asarray(w["end"], dtype=float)
+                    new_len = float(np.linalg.norm(new_end - new_start))
                     if new_len < 1e-6:
-                        dropped_by_anchor.append(w)
-                        continue
+                        w_id = w.get("segment_id", "unknown")
+                        raise ValueError(
+                            f"Wall {w_id} collapsed to zero length after junction snapping: "
+                            f"start={w['start']}, end={w['end']}"
+                        )
                     w["length"] = new_len
+                    # Update angle_degrees to match new geometry
+                    dx = float(new_end[0] - new_start[0])
+                    dy = float(new_end[1] - new_start[1])
+                    w["angle_degrees"] = math.degrees(math.atan2(dy, dx)) % 180.0
                 w.setdefault("rules_passed", []).append(
                     "junction_anchored_both"
                     if snap_start is not None and snap_end is not None

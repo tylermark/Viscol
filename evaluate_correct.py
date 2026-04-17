@@ -137,12 +137,14 @@ def _find_match(
             continue
         if (
             above_match is None
+            and idx != below_match
             and _seg_contains_point(seg, expected_start_above, perp_tol, parallel_tol_deg)
             and _seg_contains_point(seg, expected_end_above, perp_tol, parallel_tol_deg)
         ):
             above_match = idx
         if (
             below_match is None
+            and idx != above_match
             and _seg_contains_point(seg, expected_start_below, perp_tol, parallel_tol_deg)
             and _seg_contains_point(seg, expected_end_below, perp_tol, parallel_tol_deg)
         ):

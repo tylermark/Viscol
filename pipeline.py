@@ -71,8 +71,8 @@ def run(
     # Stage 1-4: geometry pipeline (unchanged)
     extracted = extract_paths(pdf_path, page_num, config)
     classify_paths(extracted, config)
-    walls, _dropped_thickness = detect_walls(extracted, config)
-    graph, junctions, _dropped_isolation = build_topology(walls, config)
+    walls, dropped_thickness = detect_walls(extracted, config)
+    graph, junctions, dropped_isolation = build_topology(walls, config)
 
     # Stage 7 first (text classification) because rooms and grid need text_region_ids
     text_regions, cross_references = classify_text_regions(extracted, config)
@@ -123,6 +123,23 @@ def run(
 
     with output_path.open("w", encoding="utf-8") as f:
         json.dump(doc, f, indent=2)
+
+    # Write dropped-candidate sidecar for visualization and debugging
+    dropped_path = output_path.with_name(f"{output_path.stem}_dropped.json")
+    dropped_doc = {
+        "metadata": {
+            "source_pdf": pdf_path.name,
+            "pipeline_version": PIPELINE_VERSION,
+            "dropped_counts": {
+                "dropped_by_thickness": len(dropped_thickness),
+                "dropped_by_isolation": len(dropped_isolation),
+            },
+        },
+        "dropped_by_thickness": dropped_thickness,
+        "dropped_by_isolation": dropped_isolation,
+    }
+    with dropped_path.open("w", encoding="utf-8") as f:
+        json.dump(dropped_doc, f, indent=2)
 
     _print_summary(pdf_path, doc, output_path)
     return output_path

@@ -27,7 +27,40 @@ def _normalize_label(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().upper()
 
 
-def _classify_room_type(labels: list[str], patterns: dict) -> tuple[str, str | None]:
+def _classify_room_type_from_fixtures(
+    polygon: Polygon,
+    fixtures: list[dict],
+) -> tuple[str | None, str | None]:
+    """Return (room_type, fixture_type_matched) based on contained/nearby fixtures.
+
+    Priority order: toilet/sink -> bathroom, stove -> kitchen, washer/dryer -> laundry.
+    Returns (None, None) if no defining fixture is found.
+    """
+    # Fixture type to room type mapping with priority order
+    fixture_to_room = [
+        (["toilet", "sink"], "bathroom"),
+        (["stove", "range", "cooktop"], "kitchen"),
+        (["washer", "dryer", "laundry"], "laundry"),
+        (["hvac", "furnace", "boiler"], "mechanical"),
+    ]
+
+    for fixture in fixtures:
+        fixture_type = fixture.get("type", "").lower()
+        # Check if fixture is inside the room polygon
+        # (centroid or position attribute, depending on fixture structure)
+        pos = fixture.get("position") or fixture.get("centroid")
+        if not pos or len(pos) < 2:
+            continue
+        from shapely.geometry import Point
+        if polygon.contains(Point(pos[0], pos[1])):
+            # Match fixture type to room type
+            for fixture_types, room_type in fixture_to_room:
+                if any(ft in fixture_type for ft in fixture_types):
+                    return room_type, fixture_type
+    return None, None
+
+
+def _classify_room_type_from_labels(labels: list[str], patterns: dict) -> tuple[str, str | None]:
     """Return (room_type, matched_label_substring). 'unknown' if no pattern hits."""
     for label in labels:
         norm = _normalize_label(label)
@@ -43,10 +76,12 @@ def _edges_to_lines(graph: nx.MultiGraph) -> list[list[tuple[float, float]]]:
     for _u, _v, _key, data in graph.edges(keys=True, data=True):
         s = data.get("start")
         e = data.get("end")
-        if s is None or e is None:
-            continue
-        if s == e:
-            continue
+        if s is None:
+            raise ValueError(f"Edge ({_u}, {_v}, key={_key}) missing 'start' attribute")
+        if e is None:
+            raise ValueError(f"Edge ({_u}, {_v}, key={_key}) missing 'end' attribute")
+        if s == e or (abs(s[0] - e[0]) < 1e-9 and abs(s[1] - e[1]) < 1e-9):
+            raise ValueError(f"Edge ({_u}, {_v}, key={_key}) has zero length: start={s}, end={e}")
         lines.append([(float(s[0]), float(s[1])), (float(e[0]), float(e[1]))])
     return lines
 
@@ -68,20 +103,31 @@ def detect_rooms(
     graph: nx.MultiGraph,
     text_blocks: list[dict],
     config: dict,
+    fixtures: list[dict] | None = None,
 ) -> list[dict]:
     """Return a list of room records per the §4 schema (minus room_id/bounding/labels
     which are filled in here).
 
     Note: modifies each wall edge in ``graph`` to append the bounding room_id
     to its ``adjacent_room_ids`` list so downstream stages can use the link.
+
+    Args:
+        graph: Wall centerline graph
+        text_blocks: Text labels from Stage 1
+        config: Pipeline config
+        fixtures: Optional list of fixture records (from future fixture detection stage)
     """
     min_area = float(config["room_min_area"])
     type_patterns = dict(config.get("room_type_label_patterns") or {})
     room_number_regex = re.compile(config["text_room_number_pattern"])
 
+    # Validate graph connectivity before attempting polygonization
+    if not nx.is_connected(graph):
+        raise ValueError("Wall graph is disconnected; cannot reliably polygonize rooms")
+
     lines = _edges_to_lines(graph)
     if not lines:
-        return []
+        raise ValueError("No valid wall segments found in graph; cannot detect rooms")
 
     merged = unary_union(MultiLineString(lines))
     raw_polys = list(polygonize(merged))
@@ -90,6 +136,8 @@ def detect_rooms(
         return []
 
     walls = _walls_by_segment_id(graph)
+    # Default to empty list if no fixtures provided
+    fixtures = fixtures or []
 
     rooms: list[dict] = []
     for poly in candidate_polys:
@@ -110,7 +158,11 @@ def detect_rooms(
                 label_texts.append(tb.get("text") or "")
                 label_region_ids.append(tb.get("_text_region_id") or "")
 
-        room_type, matched_substring = _classify_room_type(label_texts, type_patterns)
+        # Try fixture-based typing first (if fixtures are available)
+        room_type, matched_substring = _classify_room_type_from_fixtures(poly, fixtures)
+        if room_type is None:
+            # Fall back to label-based typing
+            room_type, matched_substring = _classify_room_type_from_labels(label_texts, type_patterns)
 
         # Room name/number: split the first non-empty label into number + name if possible.
         # A label that matches the room-number pattern (e.g. "101", "203a") is a number —
@@ -155,7 +207,9 @@ def detect_rooms(
                 "_label_texts": label_texts,  # internal for cross-stage wiring
                 "_matched_substring": matched_substring,
                 "rule_triggered": (
-                    f"label_match:{matched_substring}" if matched_substring else "polygon_closure"
+                    f"fixture_match:{matched_substring}" if matched_substring and room_type != "unknown"
+                    else f"label_match:{matched_substring}" if matched_substring
+                    else "polygon_closure"
                 ),
                 "requires_cross_document_validation": False,
             }

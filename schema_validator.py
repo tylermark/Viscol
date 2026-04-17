@@ -105,6 +105,59 @@ def _validate_xy(obj, path: str, errs: list) -> None:
         errs.append(f"{path}: expected [x, y] numeric pair")
 
 
+def _validate_provenance(
+    provenance: dict,
+    path: str,
+    text_region_ids: set,
+    segment_ids: set,
+    errs: list,
+) -> None:
+    """Validate provenance dict structure and types."""
+    if not isinstance(provenance, dict):
+        errs.append(f"{path}.provenance: expected dict")
+        return
+
+    # Validate boolean flags
+    for flag_key in ("rule_triggered", "requires_cross_document_validation"):
+        if flag_key in provenance and not isinstance(provenance[flag_key], bool):
+            errs.append(f"{path}.provenance.{flag_key}: expected bool, got {type(provenance[flag_key]).__name__}")
+
+    # Validate provenance lists
+    if "text_provenance" in provenance:
+        tp = provenance["text_provenance"]
+        if not isinstance(tp, list):
+            errs.append(f"{path}.provenance.text_provenance: expected list")
+        else:
+            for i, item in enumerate(tp):
+                if isinstance(item, str):
+                    if item and item not in text_region_ids:
+                        errs.append(f"{path}.provenance.text_provenance[{i}]: unknown text_region_id '{item}'")
+                elif isinstance(item, dict):
+                    # Allow dict entries with id field
+                    if "id" in item and item["id"] not in text_region_ids:
+                        errs.append(f"{path}.provenance.text_provenance[{i}].id: unknown text_region_id '{item['id']}'")
+                else:
+                    errs.append(f"{path}.provenance.text_provenance[{i}]: expected string or dict")
+
+    if "grid_provenance" in provenance:
+        gp = provenance["grid_provenance"]
+        if not isinstance(gp, list):
+            errs.append(f"{path}.provenance.grid_provenance: expected list")
+        else:
+            for i, item in enumerate(gp):
+                if not isinstance(item, (str, dict)):
+                    errs.append(f"{path}.provenance.grid_provenance[{i}]: expected string or dict")
+
+    if "cross_reference_provenance" in provenance:
+        crp = provenance["cross_reference_provenance"]
+        if not isinstance(crp, list):
+            errs.append(f"{path}.provenance.cross_reference_provenance: expected list")
+        else:
+            for i, item in enumerate(crp):
+                if not isinstance(item, (str, dict)):
+                    errs.append(f"{path}.provenance.cross_reference_provenance[{i}]: expected string or dict")
+
+
 def _validate_room(i: int, room: dict, segment_ids: set, text_region_ids: set, errs: list) -> str | None:
     p = f"rooms[{i}]"
     if not _require_keys(room, REQUIRED_ROOM_FIELDS, p, errs):
@@ -136,6 +189,9 @@ def _validate_room(i: int, room: dict, segment_ids: set, text_region_ids: set, e
         for tid in room["text_labels"]:
             if tid and tid not in text_region_ids:
                 errs.append(f"{p}.text_labels: unknown text_region_id '{tid}'")
+    # Validate provenance if present
+    if "provenance" in room:
+        _validate_provenance(room["provenance"], p, text_region_ids, segment_ids, errs)
     return rid
 
 
@@ -186,7 +242,7 @@ def _validate_wall(i: int, seg: dict, junction_ids: set, errs: list) -> str | No
     return sid
 
 
-def _validate_opening(i: int, op: dict, segment_ids: set, room_ids: set, errs: list) -> str | None:
+def _validate_opening(i: int, op: dict, segment_ids: set, room_ids: set, text_region_ids: set, errs: list) -> str | None:
     p = f"openings[{i}]"
     if not _require_keys(op, REQUIRED_OPENING_FIELDS, p, errs):
         return None
@@ -211,6 +267,9 @@ def _validate_opening(i: int, op: dict, segment_ids: set, room_ids: set, errs: l
     conf = op.get("confidence")
     if not isinstance(conf, (int, float)) or not (0.0 <= conf <= 1.0):
         errs.append(f"{p}.confidence: expected number in [0,1]")
+    # Validate provenance if present
+    if "provenance" in op:
+        _validate_provenance(op["provenance"], p, text_region_ids, segment_ids, errs)
     return oid
 
 
@@ -429,7 +488,7 @@ def validate(doc: dict) -> list[str]:
 
     opening_ids: set[str] = set()
     for i, op in enumerate(doc["openings"]):
-        oid = _validate_opening(i, op, segment_ids, room_ids, errs)
+        oid = _validate_opening(i, op, segment_ids, room_ids, text_region_ids, errs)
         if oid:
             if oid in opening_ids:
                 errs.append(f"openings[{i}].opening_id: duplicate '{oid}'")
