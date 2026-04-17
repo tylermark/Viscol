@@ -1,0 +1,66 @@
+CLAUDE.md
+  23c064f96e8ae589 120-121
+pipeline.py
+  23c064f96e8ae589 106-107,109-118
+benchmark.py
+  23c064f96e8ae589 93-95,100
+stages/build_topology.py
+  23c064f96e8ae589 455-457
+evaluate_correct.py
+  23c064f96e8ae589 166,187
+stages/detect_rooms.py
+  23c064f96e8ae589 114-116,121-125,129
+evaluate.py
+  23c064f96e8ae589 208,250,253
+stages/detect_grid.py
+  23c064f96e8ae589 126-128,131,135-139
+tests/test_schema_validator.py
+  23c064f96e8ae589 25,178-180,184
+stages/assign_semantics.py
+  23c064f96e8ae589 134-139,151-160
+schema_validator.py
+  23c064f96e8ae589 368-396,398-402,417
+stages/classify_properties.py
+  23c064f96e8ae589 84-85
+config.yaml
+  23c064f96e8ae589 15,68,83-84,90
+stages/detect_openings.py
+  23c064f96e8ae589 77-78
+visualize.py
+  23c064f96e8ae589 193
+stages/assemble_graph.py
+  23c064f96e8ae589 129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "6805275acd6fd2aa9d233a371b99c74c87872e0a",
+  "prompts": {
+    "23c064f96e8ae589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089f9f16-8387-4d9c-b167-ae35b1fce6df",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 387,
+      "total_deletions": 195,
+      "accepted_lines": 3833,
+      "overriden_lines": 2
+    },
+    "cf85da87ee5d77b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "520ab9c8-2e5c-47c6-b2c4-2d56e43e4ec0",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 244,
+      "total_deletions": 0,
+      "accepted_lines": 105,
+      "overriden_lines": 0
+    }
+  }
+}
