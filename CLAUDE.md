@@ -1,111 +1,140 @@
-# Floor Plan Semantic Extraction Engine — Operating Manual
+# Construction Intelligence — Phase 1 Extraction Infrastructure
 
-You are building the Phase 1 semantic extraction pipeline for a construction intelligence research program. This file is your operating manual. Read it at the start of every session.
+## 1. What this project is
 
----
+This is **Phase 1 data infrastructure** for a construction foundation model (H0). Not a wall detector. Not a polished utility. **An extractor that turns vector AEC drawings into structured, FM-ready training signal at scale**, plus the measurement apparatus that lets us evaluate whether downstream foundation models reach senior-coordinator-level understanding.
 
-## 1. Purpose
+Read this file at the start of every session. Re-read it when scope questions arise.
 
-This pipeline ingests **vector PDF floor plans** and outputs **structured JSON** where every detected wall segment carries geometry, visual properties, topology context, and a preliminary semantic functional role.
+## 2. Research frame — why this pipeline exists
 
-This is a **measurement instrument first, a utility second.** Every pipeline run against labeled floor plans is a data point for testing the Semantic Layer Hypothesis (H1): the claim that geometry alone is insufficient to reliably infer functional role, and that an explicit semantic layer is required to bridge drawing geometry and construction intent.
+The program's north-star hypothesis is **H0 (Construction Foundation Model Hypothesis)**: a foundation model trained on a sufficiently large and diverse corpus of multi-format AEC documents can develop expert-level semantic understanding equivalent to a senior coordinator. H1, H2, H3 are sub-hypotheses that test *how* that understanding is realized (explicit semantic layer? multi-document encoder? knowledge graph?).
 
-The wet-wall binary classification experiment is the **first benchmark probe** — not the end goal. The end goal is a construction foundation model that understands building elements at the level of a senior coordinator.
+This pipeline exists because the FM needs training signal. Drawings in the wild are PDFs with vector primitives but no structured annotations. Human coordinators extract rooms, walls, openings, dimensions, cross-references, and grid systems mentally when they read a drawing. Phase 1's job is to **extract that structure programmatically at scale so a Phase 2 foundation model can train on it**.
 
----
-
-## 2. Research Context
-
-This project sits downstream of the LLM-Wiki research reference. Before making any significant architectural decision, consult the relevant wiki pages.
-
-**Update the path below to match your local LLM-Wiki folder location.**
+Update the wiki path below to match your local LLM-Wiki folder location.
 
 ```
 WIKI_PATH = "C:\Users\tyler\LLM-Wiki"
 ```
 
-### Hypotheses (evaluation framework)
+### Research context (read these before major decisions)
 
-| File | What it tells you |
-|------|-------------------|
-| `[WIKI_PATH]/wiki/hypotheses/semantic-layer-hypothesis.md` | H1 — the core question this pipeline probes. Read the Refinement v2 section carefully. |
-| `[WIKI_PATH]/wiki/hypotheses/multi-document-inference-hypothesis.md` | H2 — why single-document extraction is only the first step. |
-| `[WIKI_PATH]/wiki/hypotheses/knowledge-graph-superiority-hypothesis.md` | H3 — informs the graph construction design in Stage 4. |
-| `[WIKI_PATH]/wiki/hypotheses/construction-foundation-model-hypothesis.md` | H0 — the north star this pipeline feeds into. |
+| File | Purpose |
+|------|---------|
+| `[WIKI_PATH]/wiki/hypotheses/construction-foundation-model-hypothesis.md` | **H0 — THE MAIN HYPOTHESIS.** Every scope decision in this pipeline should serve H0. |
+| `[WIKI_PATH]/wiki/hypotheses/semantic-layer-hypothesis.md` | H1 — geometry→role bridge. Motivates *why* we extract roles, not just geometry. |
+| `[WIKI_PATH]/wiki/hypotheses/multi-document-inference-hypothesis.md` | H2 — single doc insufficient. Motivates cross-sheet reference extraction. |
+| `[WIKI_PATH]/wiki/hypotheses/knowledge-graph-superiority-hypothesis.md` | H3 — graph > embedding. Motivates the graph output schema. |
 
-### Domain knowledge (read before touching Stage 5)
+### What we measure against
 
-These pages encode practitioner expertise that cannot be sourced from papers. Never override them without explicit instruction.
+Phase 1 is **not measured by wall F1**. Prior iterations discovered wall F1 ≈ 0.45 on real drawings is near the rule-based ceiling; this is recorded as a baseline (see §10 Legacy baseline) but is **not the primary metric going forward**. The primary metrics for Phase 1 are:
 
-- `[WIKI_PATH]/wiki/domains/wet-wall.md`
-- `[WIKI_PATH]/wiki/domains/bearing-wall.md`
-- `[WIKI_PATH]/wiki/domains/cfs-panel.md`
-- `[WIKI_PATH]/wiki/domains/panelization-rules.md`
-- `[WIKI_PATH]/wiki/domains/bim-to-fabrication-pipeline.md`
+1. **Entity coverage**: fraction of drawings for which we extract rooms, walls, openings, text regions, grid, cross-references
+2. **Scale**: number of drawings processed to a usable format
+3. **Format stability**: schema compliance across diverse drawing sources (archcad400k, MLSTRUCT-FP, real-world plans)
+4. **Coordinator-task evaluations**: derived benchmarks (e.g., "which rooms are bathrooms?", "what is on the other side of wall X?", "which walls reference schedule line W-3?")
 
-### Key papers (read before touching each stage)
+Wall F1 against hand-marked ground truth is a secondary diagnostic, not an optimization target.
 
-| Paper | Stage it informs |
-|-------|-----------------|
-| `[WIKI_PATH]/wiki/papers/unsupervised-wall-detector-floorplans.md` | Stage 3 — HFV2013's six geometric wall assumptions are the rule basis |
-| `[WIKI_PATH]/wiki/papers/raster-to-vector-floorplan.md` | Stage 4 — junction-first topology approach |
-| `[WIKI_PATH]/wiki/papers/floorplancad-panoptic-symbol-spotting.md` | Stage 3 — vector CAD benchmark context |
-| `[WIKI_PATH]/wiki/papers/shortcut-learning.md` | Stage 5 — why rule-based priors resist notation shortcuts |
-| `[WIKI_PATH]/wiki/papers/texture-vs-shape-bias.md` | Stage 5 — why VLMs latch onto drafting conventions over functional role |
-
----
-
-## 3. Pipeline Architecture
+## 3. Pipeline architecture
 
 ```
-Vector PDF
+Vector PDF (single page)
     │
     ▼
-Stage 1: Path Extraction
-    PyMuPDF → raw geometric primitives
-    (lines, polylines, arcs, filled regions, text with positions)
+Stage 1: Path Extraction               (unchanged)
+    PyMuPDF → raw primitives: lines, polylines, arcs, fills, text-with-position
     │
     ▼
-Stage 2: Property Classification
-    Group by line weight / color / dash pattern
-    → element type candidates (wall / annotation / dimension / hatch)
+Stage 2: Primitive Classification      (refactored)
+    Classify each primitive into: wall_candidate | annotation | dimension | hatch |
+                                   text_label | arc_symbol | grid_line | schedule_note |
+                                   fixture | unknown
     │
     ▼
-Stage 3: Wall Candidate Detection
-    Apply HFV2013 geometric rules:
-    parallel pairs, consistent thickness, orthogonal orientation
-    → centerline segments with thickness
+Stage 3: Wall Detection                (unchanged)
+    HFV2013-style parallel pair detection + length-weighted thickness clustering +
+    fallback for uniform stroke drawings
     │
     ▼
-Stage 4: Topology Construction
-    Junction detection (corner / T / X / endpoint)
-    → NetworkX graph: nodes = junctions, edges = wall segments
+Stage 4: Topology                      (unchanged)
+    Junction clustering + endpoint-on-body split + graph construction
     │
     ▼
-Stage 5: Semantic Role Assignment
-    Rule-based first pass using domain knowledge from wiki/domains/
-    → functional role + confidence + rule_triggered
+Stage 5: Room Detection                (NEW)
+    Polygonize wall graph → candidate rooms
+    Text-label-in-polygon matching → room names + types
     │
     ▼
-Structured JSON output
+Stage 6: Opening Detection             (NEW)
+    Arc primitives ± 90°±tol → door swings → opening positions
+    Windows via symbol-pair or break-in-wall detection (best-effort)
+    │
+    ▼
+Stage 7: Text Region Classification    (NEW)
+    Classify each text block as: room_label | room_number | sheet_callout |
+                                  dimension | wall_schedule_tag | note | title |
+                                  grid_label | unknown
+    Cross-reference resolution (e.g., "A302" → sheet A302 reference)
+    │
+    ▼
+Stage 8: Grid Detection                (NEW)
+    Long near-axis-aligned lines that terminate at letter/number callouts →
+    structural/architectural grid system
+    │
+    ▼
+Stage 9: Semantic Annotation           (refactored — no longer final stage)
+    Per-wall role assignment using room context (wet_wall ← bounds BATH room, etc.)
+    Per-room type assignment using fixture proximity and label matching
+    All assignments carry rule_triggered and requires_cross_document_validation flags
+    │
+    ▼
+Stage 10: Graph Assembly               (NEW)
+    Emit the structured graph: nodes = {rooms, walls, openings, text_regions, grid_lines},
+    edges = {bounds, opens_through, labeled_by, references, on_grid}
+    │
+    ▼
+Structured graph JSON (one per drawing)
 ```
 
----
+## 4. Output schema
 
-## 4. Output Schema
-
-Every wall segment in the output JSON must carry all of the following fields. Do not omit any field — unknown values get `null`, not a missing key.
+The canonical output is a **structured graph per drawing**, FM-training-ready. Every field present on every entity; unknown values get `null`, not a missing key.
 
 ```json
 {
   "metadata": {
     "source_pdf": "filename.pdf",
     "extraction_date": "YYYY-MM-DD",
-    "pipeline_version": "0.1.0",
-    "total_segments": 0,
-    "coordinate_system": "pdf_points_bottom_left_origin"
+    "pipeline_version": "0.6.0",
+    "coordinate_system": "pdf_points_bottom_left_origin",
+    "page_size": [width, height],
+    "entity_counts": {
+      "rooms": 0,
+      "walls": 0,
+      "openings": 0,
+      "text_regions": 0,
+      "grid_lines": 0,
+      "junctions": 0
+    }
   },
-  "segments": [
+  "rooms": [
+    {
+      "room_id": "uuid-v4",
+      "polygon": [[x, y], ...],
+      "area": 0.0,
+      "centroid": [x, y],
+      "bounding_walls": ["segment_id", ...],
+      "text_labels": ["text_region_id", ...],
+      "room_name": "Studio Unit 1.1a" | null,
+      "room_number": "203" | null,
+      "room_type": "unit | bathroom | kitchen | stair | hallway | mechanical | unknown",
+      "requires_cross_document_validation": false
+    }
+  ],
+  "walls": [
     {
       "segment_id": "uuid-v4",
       "geometry": {
@@ -126,14 +155,48 @@ Every wall segment in the output JSON must carry all of the following fields. Do
         "end_junction_id": "uuid-v4",
         "start_junction_type": "corner | t-junction | x-junction | endpoint",
         "end_junction_type": "corner | t-junction | x-junction | endpoint",
-        "connected_segment_ids": []
+        "connected_segment_ids": [],
+        "adjacent_room_ids": []
       },
       "semantic": {
         "functional_role": "interior_partition | bearing_wall | wet_wall | demising | exterior | unknown",
         "confidence": 0.0,
-        "rule_triggered": "rule name or null",
+        "rule_triggered": "string or null",
         "requires_cross_document_validation": false
       }
+    }
+  ],
+  "openings": [
+    {
+      "opening_id": "uuid-v4",
+      "type": "door | window | unknown",
+      "position": [x, y],
+      "width": 0.0,
+      "swing_arc": [[x, y], [x, y], [x, y]] | null,
+      "wall_segment_id": "uuid-v4" | null,
+      "connects_room_ids": ["room_id", "room_id"] | null,
+      "confidence": 0.0,
+      "rule_triggered": "string or null"
+    }
+  ],
+  "text_regions": [
+    {
+      "text_region_id": "uuid-v4",
+      "text": "Studio Unit 1.1a",
+      "bbox": [x0, y0, x1, y1],
+      "classification": "room_label | room_number | sheet_callout | dimension | wall_schedule_tag | note | title | grid_label | unknown",
+      "references": ["sheet_id_or_null"],
+      "enclosing_room_id": "room_id or null",
+      "linked_entity_ids": ["wall_or_grid_id"]
+    }
+  ],
+  "grid_lines": [
+    {
+      "grid_id": "uuid-v4",
+      "axis": "horizontal | vertical",
+      "label": "A" | "1" | null,
+      "start": [x, y],
+      "end": [x, y]
     }
   ],
   "junctions": [
@@ -143,102 +206,132 @@ Every wall segment in the output JSON must carry all of the following fields. Do
       "junction_type": "corner | t-junction | x-junction | endpoint",
       "connected_segment_ids": []
     }
+  ],
+  "cross_references": [
+    {
+      "source_text_region_id": "text_region_id",
+      "target_sheet": "A302",
+      "target_detail": "1" | null,
+      "context": "room_label | sheet_callout | note"
+    }
   ]
 }
 ```
 
-### Semantic role definitions
+### Schema rules
+- All entity-type top-level keys always present, even if empty list.
+- Every entity has a UUID-v4 `*_id` unique across the document.
+- All geometry in PDF points, bottom-left origin (Y-flipped from PyMuPDF native).
+- `requires_cross_document_validation: true` on any role/classification that depends on non-architectural information (bearing_wall, wet_wall, and any cross_reference).
 
-These map directly to the wiki domain pages. When in doubt, read the domain page.
+## 5. What's in scope for Phase 1
 
-| Role | Rule basis | Wiki page |
-|------|-----------|-----------|
-| `exterior` | Longest continuous walls forming the building perimeter | `wiki/domains/bearing-wall.md` |
-| `bearing_wall` | Structurally continuous — flag for cross-document validation | `wiki/domains/bearing-wall.md` |
-| `wet_wall` | Bounds bathroom/kitchen zone, or contains plumbing symbol adjacency | `wiki/domains/wet-wall.md` |
-| `demising` | Full-length continuous wall separating units or tenancies | `wiki/domains/panelization-rules.md` |
-| `interior_partition` | Default — does not match any above rule | — |
-| `unknown` | Geometry detected but rules insufficient to classify | — |
+### In scope
+1. **Rooms**: detected by polygonizing the wall graph, named by text labels, typed by fixture/label proximity
+2. **Walls**: centerlines + thickness + role (geometric roles only, per H1 we cannot get functional roles without cross-doc)
+3. **Openings**: doors via arc detection, windows on a best-effort basis
+4. **Text regions**: classified and linked to spatial entities
+5. **Grid lines**: structural/architectural grid with letter/number labels
+6. **Cross-references**: in-drawing callouts like "A302", "see A7.1" parsed into structured link records
 
-`requires_cross_document_validation: true` must be set for any `bearing_wall` or `wet_wall` assignment — these cannot be confirmed from a single architectural drawing alone (this is H2's empirical footprint in the pipeline).
+### Out of scope for Phase 1
+1. **Multi-document fusion** (H2 territory — single drawing at a time)
+2. **ML / neural models** (rule-based only — see §8)
+3. **Functional roles requiring non-visual info** (wet_wall confirmation needs MEP plan; we flag `requires_cross_document_validation: true` and stop)
+4. **IFC / DXF ingestion** (PDF only for Phase 1)
+5. **Drawing-level semantics** (floor level, phase, discipline — these come from sheet metadata, Phase 2)
+6. **Polished per-drawing accuracy** (we care about scale and structure, not nail-in-the-coffin F1)
 
----
+## 6. Measurement protocol
 
-## 5. Evaluation Protocol
+### Primary metrics (Phase 1 success)
+1. **Entity coverage per drawing** — fraction of drawings where each entity type is non-empty
+2. **Schema validity rate** — fraction that pass `schema_validator.validate()`
+3. **Process throughput** — wall-clock seconds per drawing (<60s target, <300s hard cap)
+4. **Batch scale** — demonstrated on >=100 diverse drawings end-to-end
 
-**The pipeline is not done when it runs. It is done when it has been validated.**
+### Secondary metrics (diagnostics, not targets)
+1. **Wall F1** against hand-marked ground truth (legacy; v0.4.1 = 0.45 across 11 plans)
+2. **Room naming precision** — fraction of detected rooms whose matched text label is inside the polygon (not a nearby mis-match)
+3. **Opening-on-wall consistency** — fraction of openings whose `wall_segment_id` is non-null
+4. **Cross-reference resolution rate** — fraction of detected cross-references that point to plausible sheet IDs
 
-### Ground truth format
+### Coordinator-task benchmarks (the real Phase 1 deliverable)
+These are H0-relevant. Built over batch extracted output:
+1. "Which rooms are bathrooms/kitchens?" (from `room_type`)
+2. "What rooms are adjacent to room X?" (from `bounding_walls` ∩)
+3. "What's on the other side of wall X?" (from `adjacent_room_ids`)
+4. "Which walls are referenced by schedule note W-3?" (from `cross_references`)
+5. "Which rooms require cross-document validation for wet-wall classification?" (from the flag)
 
-Ground truth files live in `evaluation/ground_truth/`. One JSON file per floor plan, same schema as pipeline output but with human-verified `functional_role` values and `confidence: 1.0`.
+Each coordinator-task benchmark has a precision/recall/F1 computed against a manually-audited subset. These numbers — not wall F1 — are what Phase 1 is accountable to.
 
-### Evaluation script
-
-`evaluate.py` takes pipeline output + ground truth and reports:
-
-- Per-class precision, recall, F1
-- Overall accuracy
-- Confusion matrix (saved as CSV)
-- Failure mode summary: which rules fired incorrectly and why
-
-Results saved to `evaluation/results/YYYY-MM-DD_<filename>.json`.
-
-### What the numbers mean for H1
-
-| Result | H1 implication |
-|--------|---------------|
-| High accuracy across all classes | H1 may be weaker than expected for geometry-amenable classes |
-| High accuracy on exterior/partition, low on wet_wall/bearing_wall | H1 confirmed — functional role requires non-visual information |
-| Systematic confusion (e.g., wet_wall → partition) | H1 confirmed — and defines the exact failure mode |
-| Random errors across all classes | Pipeline bug, not an H1 result |
-
----
-
-## 6. Project Structure
+## 7. Project structure
 
 ```
 project-root/
 ├── CLAUDE.md                  ← this file
 ├── config.yaml                ← all tunable thresholds
-├── pipeline.py                ← entry point: python pipeline.py <pdf_path>
+├── pipeline.py                ← entry point: python pipeline.py <pdf>
+├── schema_validator.py        ← validates against §4 schema
 ├── stages/
 │   ├── __init__.py
+│   ├── _config.py             ← config loader
 │   ├── extract_paths.py       ← Stage 1
 │   ├── classify_properties.py ← Stage 2
 │   ├── detect_walls.py        ← Stage 3
 │   ├── build_topology.py      ← Stage 4
-│   └── assign_semantics.py    ← Stage 5
-├── evaluate.py
-├── output/                    ← pipeline JSON outputs (gitignored if large)
+│   ├── detect_rooms.py        ← Stage 5 (NEW)
+│   ├── detect_openings.py     ← Stage 6 (NEW)
+│   ├── classify_text.py       ← Stage 7 (NEW)
+│   ├── detect_grid.py         ← Stage 8 (NEW)
+│   ├── assign_semantics.py    ← Stage 9 (room-aware)
+│   └── assemble_graph.py      ← Stage 10 (NEW)
+├── evaluate.py                ← wall F1 diagnostic (legacy)
+├── evaluate_correct.py        ← wall F1 vs hand-marked (legacy)
+├── benchmark.py               ← cross-drawing stability + per-entity coverage
+├── benchmark_gt.py            ← GT wall F1 diagnostic (legacy)
+├── visualize.py               ← annotated PDF renderer
+├── output/                    ← pipeline JSON outputs (gitignored)
 ├── evaluation/
 │   ├── ground_truth/          ← manually labeled JSONs
 │   └── results/               ← evaluation run outputs
 └── tests/
-    ├── test_extract.py
-    ├── test_classify.py
-    ├── test_walls.py
-    ├── test_topology.py
-    └── test_semantics.py
 ```
 
----
-
-## 7. Conventions
+## 8. Conventions
 
 - **Language**: Python 3.10+
-- **Core dependencies**: PyMuPDF (`fitz`), Shapely, NetworkX, NumPy, PyYAML
-- **No ML model dependencies in Phase 1.** Rule-based only. This is intentional — establish and measure the geometric baseline before introducing learned components.
-- **All thresholds in `config.yaml`**, never hardcoded. Thresholds that vary per drawing set must be tunable without touching code.
+- **Core dependencies**: PyMuPDF, Shapely, NetworkX, NumPy, PyYAML
+- **No ML model dependencies in Phase 1.** The explicit-rule baseline is the contrast Phase 2 (FM) must outperform. Without a clean baseline, H1/H3 ablations are unmeasurable.
+- **All thresholds in `config.yaml`.** No hardcoded numbers in `.py` files.
 - **Coordinates**: PDF points, origin at bottom-left.
 - **One test per pipeline stage minimum.** Tests run with `pytest`.
-- **Fail loudly.** If a stage produces unexpected geometry (negative thickness, zero-length segment, disconnected graph), raise an exception with a clear message rather than silently continuing.
+- **Fail loudly** on unexpected geometry (negative thickness, zero-length segment, disconnected graph) — raise with a clear message.
 
----
+## 9. Principles
 
-## 8. Principles
+- **Infrastructure first, accuracy second.** A messy graph extracted from 1000 drawings is more valuable to H0 than a pristine extraction from 10. Scale and structure matter more than per-drawing F1.
+- **Every entity names its source rule.** `rule_triggered` on every classification. Black-box outputs don't support H1/H3 research.
+- **H2 honesty flag.** `requires_cross_document_validation: true` on any claim that can't be verified from one drawing alone. This is the pipeline's empirical footprint of H2.
+- **Rule transparency over cleverness.** When in doubt, pick the simpler rule and mark confidence lower. Don't build opaque heuristics that hide which signal fired.
+- **Domain knowledge is authoritative.** When wiki domain pages conflict with geometric heuristics, domain rules win.
 
-- **Geometry first, semantics second.** Get wall detection geometrically correct before adding semantic rules. A wrong geometry with a right label is worse than a right geometry with an unknown label.
-- **Rule transparency.** Every semantic assignment must name the rule that fired. Black-box outputs are not useful for research.
-- **H1 visibility.** The `requires_cross_document_validation` flag is the pipeline's acknowledgment that it cannot answer certain questions from a single drawing. Preserve this signal — do not paper over it with a confident guess.
-- **Domain knowledge is authoritative.** The wiki domain pages encode practitioner expertise. When a domain rule conflicts with a geometric heuristic, the domain rule wins.
-- **Measure everything.** No phase is complete without a benchmark result on held-out floor plans.
+## 10. Legacy baseline (for H1/H3 comparison)
+
+v0.4.1 of the wall-only pipeline achieved:
+- Mean wall F1 = 0.45 across 11 hand-marked plans (perp_tol=12pt, parallel_tol=10°)
+- Median F1 = 0.49, range 0.25–0.62
+- Mean precision = 0.45, mean recall = 0.54
+
+This is the rule-based geometry-only baseline a future FM must exceed. Do not re-optimize this number; it's a diagnostic artifact, not a target. The v0.4.1 code is preserved in Stages 1–4 (wall detection) and in the legacy evaluators (`evaluate.py`, `evaluate_correct.py`).
+
+## 11. What done looks like for Phase 1
+
+Phase 1 concludes when all of the following are true:
+1. Pipeline extracts the full §4 schema (rooms, walls, openings, text_regions, grid, cross_references) without erroring on >=90% of a 100-drawing sample from archcad400k or similar
+2. Output validates against `schema_validator.validate()` on every successful run
+3. Coverage metrics (§6) are reported over the batch
+4. A short write-up exists describing: what the pipeline reliably extracts, what fails, which entity types have the strongest signal, and what architecture decisions this implies for Phase 2 (FM training)
+
+After that we start Phase 2: use the Phase 1 corpus to train an FM and evaluate it against coordinator-task benchmarks and the H0 falsification criteria.

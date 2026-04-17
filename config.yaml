@@ -10,6 +10,11 @@ annotation_max_line_weight: 0.3       # pt
 dimension_text_proximity: 15.0        # pt — thin line within this of text → dimension
 wall_color_max_darkness: 0.3          # perceived lightness — walls must be darker than this (0=black, 1=white)
 
+# Stage 2 — fallback when stroke width is uninformative (v0.4.1)
+wall_candidate_min_count: 100         # if fewer than this many wall_candidates after primary pass, retry with length-based fallback
+wall_fallback_min_length: 20.0        # pt — in fallback mode, any solid dark line longer than this is a wall_candidate
+wall_fallback_max_candidates: 1500    # cap on fallback-promoted candidates (longest-first) to keep Stage 3 O(n²) tractable
+
 # Stage 3 — Wall Detection
 parallel_angle_tolerance: 2.0         # degrees — max angle difference for two lines to count as parallel
 orthogonal_angle_tolerance: 5.0       # degrees — tolerance around 0/90/180/270 for orthogonality flag
@@ -17,8 +22,26 @@ wall_min_thickness: 2.0               # pt — thinner than this is not a wall
 wall_max_thickness: 40.0              # pt — thicker than this is likely a filled region
 wall_min_overlap_ratio: 0.3           # fraction of shorter segment that must project onto its pair
 
+# Stage 3 — global thickness clustering (v0.3.0, HFV2013 Assumption 4)
+thickness_cluster_bin_width: 0.3         # pt — histogram resolution (v0.4.0: tighter to separate 4pt and 6pt modes)
+thickness_cluster_min_support: 3         # min pairs in a peak bin to count as a mode
+thickness_cluster_tolerance: 0.25        # fractional acceptance window around each peak (e.g., 0.25 = ±25%)
+thickness_cluster_max_modes: 3           # keep top N peaks (v0.4.0: 3 to allow interior + structural + exterior populations)
+thickness_cluster_mode_max_realistic: 18.0  # pt — modes wider than this are rejected as noise (v0.4.1: caps spurious clusters at 30-40pt from columns/symbols)
+thickness_cluster_min_candidates: 10     # skip clustering if fewer than this many candidates (fallback for synthetic / tiny inputs)
+
 # Stage 4 — Topology
 junction_snap_distance: 3.0           # pt — endpoints within this distance collapse to one junction
+isolated_max_length: 30.0             # pt — walls shorter than this with BOTH endpoints floating are dropped (v0.2.0)
+gap_close_distance: 0.0               # pt — v0.5 Path A experiment: gap closing disabled (regressed F1 by merging endpoints of different walls). Code preserved for future use.
+gap_close_max_angle_drift: 15.0       # degrees — max angle drift allowed when extending walls to close a gap
+
+# Stage 3 — junction anchoring (v0.5.0 Path A junction-first filter)
+junction_anchor_enabled: false        # v0.5: disabled as a hard filter — causes recall regression. Junction detection still runs to tag walls (rule_passed signal) without dropping.
+junction_anchor_tag_only: true        # when true, anchoring is a soft signal (tag) rather than a filter (drop)
+junction_anchor_min_cluster_size: 3   # a cluster of raw wall-candidate endpoints must have at least this many to count as a junction
+junction_anchor_snap_tolerance: 15.0  # pt — wall endpoint must be within this distance of a pre-detected junction to snap
+junction_raw_snap_radius: 3.0         # pt — radius for initial raw-endpoint clustering into junctions
 
 # Stage 5 — Semantic Role Assignment
 demising_min_length: 200.0            # pt — walls longer than this crossing X/T junctions are candidate demising
@@ -38,3 +61,35 @@ wet_zone_labels:
 
 # Evaluation
 evaluation_match_proximity: 3.0       # pt — midpoint distance for matching segments across pipeline/ground-truth
+
+# Stage 5 — Room Detection (v0.6.0)
+room_min_area: 500.0                  # pt² — polygons smaller than this are ignored (noise from tiny enclosures)
+room_type_label_patterns:             # case-insensitive substring matches on text labels inside a room polygon
+  bathroom: ["BATH", "WC", "RESTROOM", "POWDER", "TOILET", "LAVATORY"]
+  kitchen: ["KITCHEN", "KITCHENETTE", "KIT"]
+  stair: ["STAIR", "STAIRS", "EXIT STAIR"]
+  hallway: ["HALL", "HALLWAY", "CORRIDOR"]
+  mechanical: ["MECH", "MECHANICAL", "ELEC", "ELECTRICAL", "DATA", "IT", "UTILITY"]
+  unit: ["UNIT", "APARTMENT", "APT", "STUDIO", "BEDROOM", "BDRM", "BR"]
+  laundry: ["LAUNDRY", "WASH"]
+  storage: ["STORAGE", "STOR", "CLOSET"]
+  office: ["OFFICE", "CONFERENCE", "MEETING"]
+
+# Stage 6 — Opening Detection (v0.6.0)
+door_arc_span_min_deg: 60.0           # degrees — minimum arc span for a door swing
+door_arc_span_max_deg: 120.0          # degrees — maximum arc span
+door_arc_radius_min: 10.0             # pt — minimum radius (too small = symbol/callout)
+door_arc_radius_max: 200.0            # pt — maximum radius (too large = decorative)
+door_to_wall_distance: 15.0           # pt — max distance from arc to wall centerline to associate
+
+# Stage 7 — Text Classification (v0.6.0)
+text_room_number_pattern: "^[0-9]{2,4}[a-zA-Z]?$"             # matches: 204, 203a, 1101
+text_sheet_callout_pattern: "^[A-Z][0-9]+[.]?[0-9]*[a-z]?$"   # matches: A302, A7.1, A102a, E2.2
+text_dimension_pattern: "^[0-9]+['\\\"\\-\\s/]+$"             # matches dimension strings like 28'-6", 4'-4 5/8"
+text_grid_label_pattern: "^[A-Z]{1,2}$|^[0-9]{1,2}$|^[A-Z][.][0-9]+$"  # single letter, single digit, A.1, B.2
+text_grid_label_blocklist: ["DW", "DN", "UP", "W", "D", "REF", "WC", "WD", "DR", "TV", "AC", "EQ", "FD", "FX", "GF", "CL", "CO", "EX", "VT"]  # fixture/code abbreviations that look like grid labels
+
+# Stage 8 — Grid Detection (v0.6.0)
+grid_line_min_length: 300.0           # pt — only long lines qualify as grid
+grid_label_proximity: 40.0            # pt — grid labels (A, 1, B.1) must be within this distance of line endpoint
+grid_endpoint_near_boundary: 50.0     # pt — grid lines typically terminate near the drawing boundary

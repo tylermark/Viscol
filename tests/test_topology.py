@@ -17,7 +17,8 @@ def test_rectangle_has_four_corners_and_four_walls():
         make_wall_record((100, 100), (0, 100)),
         make_wall_record((0, 100), (0, 0)),
     ]
-    graph, junctions = build_topology(walls, default_config())
+    graph, junctions, dropped = build_topology(walls, default_config())
+    assert dropped == []
     assert len(junctions) == 4
     assert _junction_types(junctions) == ["corner", "corner", "corner", "corner"]
     assert graph.number_of_edges() == 4
@@ -30,7 +31,8 @@ def test_t_junction_from_endpoint_on_body_splits_host_wall():
         make_wall_record((0, 0), (100, 0)),
         make_wall_record((50, 0), (50, 50)),
     ]
-    graph, junctions = build_topology(walls, default_config())
+    graph, junctions, dropped = build_topology(walls, default_config())
+    assert dropped == []
     # 3 junctions total: (0,0), (100,0), (50,0), (50,50) -- one of these is the T
     assert len(junctions) == 4
     types = _junction_types(junctions)
@@ -41,8 +43,10 @@ def test_t_junction_from_endpoint_on_body_splits_host_wall():
 
 
 def test_endpoints_without_neighbors_are_endpoint_type():
+    # Length 50 > isolated_max_length default 30, so kept even though both ends float.
     walls = [make_wall_record((0, 0), (50, 0))]
-    _graph, junctions = build_topology(walls, default_config())
+    _graph, junctions, dropped = build_topology(walls, default_config())
+    assert dropped == []
     assert len(junctions) == 2
     assert _junction_types(junctions) == ["endpoint", "endpoint"]
 
@@ -52,10 +56,51 @@ def test_connected_segment_ids_are_populated():
         make_wall_record((0, 0), (100, 0)),
         make_wall_record((100, 0), (100, 100)),
     ]
-    graph, junctions = build_topology(walls, default_config())
+    graph, junctions, dropped = build_topology(walls, default_config())
+    assert dropped == []
     corner = next(j for j in junctions if j["junction_type"] == "corner")
     assert len(corner["connected_segment_ids"]) == 2
     # Walls should reference each other in connected_segment_ids
     edge_data = list(graph.edges(keys=True, data=True))
     for _u, _v, _k, data in edge_data:
         assert len(data["connected_segment_ids"]) == 1
+
+
+# --- v0.2.0 isolation filter tests ---
+
+def test_short_isolated_segment_is_dropped():
+    """Both endpoints floating AND length < isolated_max_length → dropped."""
+    walls = [make_wall_record((0, 0), (20, 0))]  # length 20 < default 30
+    graph, junctions, dropped = build_topology(walls, default_config())
+    assert graph.number_of_edges() == 0
+    assert junctions == []
+    assert len(dropped) == 1
+    assert dropped[0]["length"] == 20.0
+
+
+def test_peninsula_wall_is_kept_even_when_short():
+    """A short wall connected at one end to a real structure is a peninsula — keep it."""
+    # Rectangle + a dangling short wall attached at one corner.
+    walls = [
+        make_wall_record((0, 0), (100, 0)),
+        make_wall_record((100, 0), (100, 100)),
+        make_wall_record((100, 100), (0, 100)),
+        make_wall_record((0, 100), (0, 0)),
+        make_wall_record((50, 0), (50, 15)),  # short (15pt) peninsula off the bottom wall
+    ]
+    graph, junctions, dropped = build_topology(walls, default_config())
+    # Peninsula's bottom end is a t-junction (on the split bottom wall), top end is endpoint.
+    # One endpoint floating is NOT enough — filter requires BOTH floating — so it's kept.
+    assert dropped == []
+    # Bottom wall was split at (50,0) → 2 pieces + 3 other exterior + peninsula = 6 edges.
+    assert graph.number_of_edges() == 6
+
+
+def test_long_isolated_segment_is_kept():
+    """Both endpoints floating but length ≥ threshold → kept (could be a valid standalone wall)."""
+    # 100 pt > default isolated_max_length of 30
+    walls = [make_wall_record((0, 0), (100, 0))]
+    graph, junctions, dropped = build_topology(walls, default_config())
+    assert dropped == []
+    assert graph.number_of_edges() == 1
+    assert len(junctions) == 2
