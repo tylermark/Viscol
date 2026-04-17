@@ -20,11 +20,46 @@ import json
 import sys
 import time
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import date
 from pathlib import Path
 
 import pipeline
 from stages._config import load_config
+
+
+def _run_pipeline_subprocess(pdf_path: str, config_path: str, output_dir: str) -> None:
+    """Top-level function so ProcessPoolExecutor can pickle it."""
+    pipeline.run(
+        pdf_path=Path(pdf_path),
+        page_num=None,
+        config_path=Path(config_path),
+        output_dir=Path(output_dir),
+    )
+
+
+def _run_with_timeout(pdf: Path, config_path: Path, output_dir: Path, timeout_s: float) -> tuple[str, str | None]:
+    """Run the pipeline on one PDF in a subprocess, killing it on timeout.
+
+    Returns (status, error_message_or_None). A timeout returns ("timeout", message).
+    """
+    with ProcessPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            _run_pipeline_subprocess, str(pdf), str(config_path), str(output_dir)
+        )
+        try:
+            future.result(timeout=timeout_s)
+            return "ok", None
+        except FuturesTimeoutError:
+            # Best-effort cancellation; kill any worker processes still running.
+            for proc in pool._processes.values():  # type: ignore[attr-defined]
+                try:
+                    proc.terminate()
+                except Exception:  # noqa: BLE001
+                    pass
+            return "timeout", f"exceeded {timeout_s:.0f}s cap"
+        except Exception as exc:
+            return "error", f"{type(exc).__name__}: {exc}"
 
 
 def _find_pdfs(plans_dir: Path) -> list[Path]:
@@ -144,6 +179,7 @@ def run_benchmark(
     report_path: Path,
     config_path: Path,
     max_plans: int | None = None,
+    per_plan_timeout_s: float = 300.0,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -161,16 +197,13 @@ def run_benchmark(
             "stem": pdf.stem,
             "size_mb": round(pdf.stat().st_size / (1024 * 1024), 2),
         }
-        try:
-            pipeline.run(
-                pdf_path=pdf,
-                page_num=None,
-                config_path=config_path,
-                output_dir=output_dir,
-            )
+        status, err = _run_with_timeout(pdf, config_path, output_dir, per_plan_timeout_s)
+        if status == "ok":
             plan_result["pipeline_status"] = "ok"
-        except Exception as exc:
-            plan_result["pipeline_status"] = f"error: {type(exc).__name__}: {exc}"
+        elif status == "timeout":
+            plan_result["pipeline_status"] = f"timeout: {err}"
+        else:
+            plan_result["pipeline_status"] = f"error: {err}"
         plan_result["wall_time_seconds"] = round(time.time() - t0, 2)
 
         # Only summarize on a fresh successful run — otherwise stale output JSONs
@@ -341,6 +374,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
     parser.add_argument("--report", type=Path, default=None, help="Output markdown report path.")
     parser.add_argument("--max-plans", type=int, default=None)
+    parser.add_argument(
+        "--per-plan-timeout",
+        type=float,
+        default=300.0,
+        help="Per-plan wall-clock cap in seconds (CLAUDE.md §6 hard cap). Default 300.",
+    )
     args = parser.parse_args(argv)
 
     if args.report is None:
@@ -353,6 +392,7 @@ def main(argv: list[str] | None = None) -> int:
         report_path=args.report,
         config_path=args.config,
         max_plans=args.max_plans,
+        per_plan_timeout_s=args.per_plan_timeout,
     )
     return 0
 
