@@ -44,7 +44,12 @@ REQUIRED_KEYS = {
     "evaluation_match_proximity",
     # v0.6.0 — multi-entity extraction
     "room_min_area",
+    "room_max_aspect_ratio",
+    "room_min_short_dimension",
     "room_boundary_tolerance",
+    "room_gap_close_enabled",
+    "room_gap_close_max_distance",
+    "room_gap_close_max_angle_drift_deg",
     "room_type_label_patterns",
     "door_arc_span_min_deg",
     "door_arc_span_max_deg",

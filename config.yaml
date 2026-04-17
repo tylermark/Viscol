@@ -67,6 +67,23 @@ evaluation_match_proximity: 3.0       # pt — midpoint distance for matching se
 # Stage 5 — Room Detection (v0.6.0)
 room_min_area: 500.0                  # pt² — polygons smaller than this are ignored (noise from tiny enclosures)
 room_boundary_tolerance: 9.0          # pt — wall centerline midpoint within this of a room polygon boundary → bounding wall
+
+# Stage 5 — Sliver filter
+# Wall-thickness voids (the hollow cavity between a wall's front face and back
+# face) often close into long thin polygons that look like rooms to polygonize.
+# Reject any polygon whose long side is more than N× its short side, or whose
+# short side is thinner than the typical wall thickness.
+room_max_aspect_ratio: 5.0            # reject polygons whose max(w, h) / min(w, h) exceeds this
+room_min_short_dimension: 15.0        # pt — reject polygons with short-side smaller than this
+
+# Stage 5 — Virtual gap closure for room polygonization
+# Real floor plans have doorways, arches, and drafting gaps that prevent
+# polygonize() from closing room loops. These settings control whether we
+# add virtual edges between nearby wall endpoints ONLY for the polygonize
+# step (wall geometry stays untouched).
+room_gap_close_enabled: true          # when true, virtually bridge near-colinear endpoint pairs before polygonize
+room_gap_close_max_distance: 60.0     # pt — max endpoint-pair distance to virtually bridge (≈ typical door width)
+room_gap_close_max_angle_drift_deg: 20.0  # degrees — max angle drift between the incident walls of a paired endpoint; higher = more permissive
 room_type_label_patterns:             # case-insensitive substring matches on text labels inside a room polygon
   bathroom: ["BATH", "WC", "RESTROOM", "POWDER", "TOILET", "LAVATORY"]
   kitchen: ["KITCHEN", "KITCHENETTE", "KIT"]

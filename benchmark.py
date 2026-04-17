@@ -93,13 +93,24 @@ def _summarize_run(plan: Path, output_dir: Path, config: dict) -> dict:
     role_counts = Counter(s["semantic"]["functional_role"] for s in doc["walls"])
     thicknesses = [s["geometry"]["thickness"] for s in doc["walls"]]
     lengths = [s["geometry"]["centerline_length"] for s in doc["walls"]]
+    room_type_counts = Counter(r.get("room_type") or "unknown" for r in doc.get("rooms", []))
+    text_class_counts = Counter(
+        t.get("classification") or "unknown" for t in doc.get("text_regions", [])
+    )
 
     result.update(
         {
             "status": "ok",
             "walls": len(doc["walls"]),
             "junctions": len(doc["junctions"]),
+            "rooms": len(doc.get("rooms", [])),
+            "openings": len(doc.get("openings", [])),
+            "text_regions": len(doc.get("text_regions", [])),
+            "grid_lines": len(doc.get("grid_lines", [])),
+            "cross_references": len(doc.get("cross_references", [])),
             "role_counts": dict(role_counts),
+            "room_type_counts": dict(room_type_counts),
+            "text_class_counts": dict(text_class_counts),
             "thickness_median": _median(thicknesses) if thicknesses else None,
             "thickness_min": min(thicknesses) if thicknesses else None,
             "thickness_max": max(thicknesses) if thicknesses else None,
@@ -241,16 +252,65 @@ def _render_markdown(report: dict) -> str:
             )
         lines.append("")
 
-    lines.append("## Per-plan results")
+    # ----- v0.6 entity-coverage aggregate -----
+    if ok:
+        def _frac(entity: str) -> float:
+            return sum(1 for r in ok if (r.get(entity) or 0) > 0) / len(ok)
+
+        lines.append("## Entity coverage (v0.6) — fraction of plans with ≥1 entity of each type")
+        lines.append("")
+        lines.append(f"- Walls:            {_frac('walls'):.0%} ({len(ok)} plans)")
+        lines.append(f"- Rooms:            {_frac('rooms'):.0%}")
+        lines.append(f"- Openings:         {_frac('openings'):.0%}")
+        lines.append(f"- Text regions:     {_frac('text_regions'):.0%}")
+        lines.append(f"- Grid lines:       {_frac('grid_lines'):.0%}")
+        lines.append(f"- Cross-references: {_frac('cross_references'):.0%}")
+        lines.append("")
+        # Aggregated room-type distribution
+        rt_total: Counter = Counter()
+        for r in ok:
+            rt_total.update(r.get("room_type_counts") or {})
+        if rt_total:
+            lines.append(f"- Room types (across all plans): {dict(rt_total)}")
+        lines.append("")
+
+    lines.append("## Per-plan v0.6 entity counts")
     lines.append("")
     lines.append(
-        "| Plan | Status | Walls | Junct. | Ext. | Dropped (thick/iso) | Thk(med) | GT walls* | Det. rate |"
+        "| Plan | Status | Walls | Rooms | Open | Text | Grid | XRef | GT walls* | Det. rate |"
     )
-    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
     for r in report["results"]:
         status = r.get("pipeline_status", "?")
         status_cell = "✓" if status == "ok" else f"✗ {status[:40]}"
         walls = r.get("walls", "—")
+        rooms = r.get("rooms", "—")
+        openings = r.get("openings", "—")
+        text_r = r.get("text_regions", "—")
+        grid = r.get("grid_lines", "—")
+        xref = r.get("cross_references", "—")
+        gt_walls = r.get("estimated_gt_walls", "—")
+        det_rate = r.get("detection_rate", "—")
+        det_rate_cell = f"{det_rate:.2f}" if isinstance(det_rate, (int, float)) else "—"
+        name = r.get("plan", "")
+        if len(name) > 55:
+            name = name[:52] + "…"
+        lines.append(
+            f"| {name} | {status_cell} | {walls} | {rooms} | {openings} | "
+            f"{text_r} | {grid} | {xref} | {gt_walls} | {det_rate_cell} |"
+        )
+
+    # Secondary wall-detail table (thickness, dropped, role breakdown)
+    lines.append("")
+    lines.append("## Per-plan wall details")
+    lines.append("")
+    lines.append(
+        "| Plan | Junct. | Ext. | Dropped (thick/iso) | Thk(med) |"
+    )
+    lines.append("|---|---:|---:|---:|---:|")
+    for r in report["results"]:
+        if r.get("pipeline_status") != "ok":
+            continue
         junct = r.get("junctions", "—")
         roles = r.get("role_counts", {})
         ext = roles.get("exterior", 0) if isinstance(roles, dict) else "—"
@@ -260,16 +320,11 @@ def _render_markdown(report: dict) -> str:
         dropped_cell = f"{drop_thick}/{drop_iso}" if r.get("dropped_total") else "—"
         thk = r.get("thickness_median")
         thk_cell = f"{thk:.1f}" if thk else "—"
-        gt_walls = r.get("estimated_gt_walls", "—")
-        det_rate = r.get("detection_rate", "—")
-        det_rate_cell = f"{det_rate:.2f}" if isinstance(det_rate, (int, float)) else "—"
-        # Truncate plan name
         name = r.get("plan", "")
         if len(name) > 55:
             name = name[:52] + "…"
         lines.append(
-            f"| {name} | {status_cell} | {walls} | {junct} | {ext} | "
-            f"{dropped_cell} | {thk_cell} | {gt_walls} | {det_rate_cell} |"
+            f"| {name} | {junct} | {ext} | {dropped_cell} | {thk_cell} |"
         )
 
     lines.append("")
