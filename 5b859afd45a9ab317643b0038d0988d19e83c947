@@ -1,0 +1,44 @@
+scripts/eval_cross_reference_graph.py
+  23c064f96e8ae589 120-122,142
+stages/detect_walls.py
+  23c064f96e8ae589 454-457
+docs/phase1_summary.md
+  23c064f96e8ae589 39-49
+scripts/regen_report.py
+  23c064f96e8ae589 66-72,79-82
+benchmark.py
+  23c064f96e8ae589 216-226,241-249,256-259,281-286
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "5b859afd45a9ab317643b0038d0988d19e83c947",
+  "prompts": {
+    "23c064f96e8ae589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089f9f16-8387-4d9c-b167-ae35b1fce6df",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 66,
+      "total_deletions": 17,
+      "accepted_lines": 1623,
+      "overriden_lines": 0
+    },
+    "cf85da87ee5d77b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "520ab9c8-2e5c-47c6-b2c4-2d56e43e4ec0",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 100,
+      "overriden_lines": 0
+    }
+  }
+}
