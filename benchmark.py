@@ -213,6 +213,17 @@ def run_benchmark(
             plan_result.update({k: v for k, v in summary.items() if k != "plan"})
         else:
             plan_result["status"] = "error"
+            # Remove any stale/partial JSONs left over from a prior run (or
+            # written mid-pipeline before the subprocess was killed on timeout).
+            # regen_report.py reads the same directory; leaving old files there
+            # would cause it to count pre-timeout results as this run's output.
+            for suffix in (".json", "_dropped.json", ".invalid.json"):
+                stale = output_dir / f"{pdf.stem}{suffix}"
+                try:
+                    if stale.exists():
+                        stale.unlink()
+                except OSError as exc:
+                    print(f"  warning: failed to remove {stale}: {exc}", file=sys.stderr)
 
         if gt_dir is not None:
             gt_csv = _match_ground_truth(pdf, gt_dir)
@@ -227,14 +238,25 @@ def run_benchmark(
 
         results.append(plan_result)
 
+    # Normalize pipeline_status into a bucket name (the prefix before ":"),
+    # so "timeout: exceeded 300s cap" buckets as "timeout" and every outcome
+    # surfaces in status_counts rather than silently disappearing.
+    status_counts: Counter = Counter()
+    for r in results:
+        raw = r.get("pipeline_status", "")
+        bucket = raw.split(":", 1)[0] if raw else "unknown"
+        status_counts[bucket] += 1
+
     report = {
         "benchmark_date": date.today().isoformat(),
         "pipeline_version": pipeline.PIPELINE_VERSION,
         "plans_dir": str(plans_dir),
         "ground_truth_dir": str(gt_dir) if gt_dir else None,
         "n_plans": len(results),
-        "n_ok": sum(1 for r in results if r.get("pipeline_status") == "ok"),
-        "n_errors": sum(1 for r in results if r.get("pipeline_status", "").startswith("error")),
+        # Backward-compatible aggregates (derived from status_counts).
+        "n_ok": status_counts.get("ok", 0),
+        "n_errors": status_counts.get("error", 0),
+        "status_counts": dict(status_counts),
         "results": results,
     }
 
@@ -256,7 +278,12 @@ def _render_markdown(report: dict) -> str:
     lines.append(f"# Benchmark report — v{report['pipeline_version']}")
     lines.append("")
     lines.append(f"- **Date:** {report['benchmark_date']}")
-    lines.append(f"- **Plans:** {report['n_plans']} ({report['n_ok']} ok, {report['n_errors']} errors)")
+    status_counts = report.get("status_counts") or {
+        "ok": report.get("n_ok", 0),
+        "error": report.get("n_errors", 0),
+    }
+    status_pretty = ", ".join(f"{v} {k}" for k, v in sorted(status_counts.items(), key=lambda kv: -kv[1]))
+    lines.append(f"- **Plans:** {report['n_plans']} ({status_pretty})")
     lines.append(f"- **Plans dir:** `{report['plans_dir']}`")
     if report["ground_truth_dir"]:
         lines.append(f"- **Ground truth dir:** `{report['ground_truth_dir']}`")

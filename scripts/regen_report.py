@@ -63,15 +63,23 @@ def main(argv: list[str] | None = None) -> int:
                     )
         results.append(plan_result)
 
+    from collections import Counter
+    status_counts: Counter = Counter()
+    for r in results:
+        raw = r.get("pipeline_status", "")
+        bucket = raw.split(":", 1)[0] if raw else "unknown"
+        status_counts[bucket] += 1
+
     report = {
         "benchmark_date": date.today().isoformat(),
         "pipeline_version": pipeline.PIPELINE_VERSION,
         "plans_dir": str(args.plans_dir),
         "ground_truth_dir": str(args.ground_truth) if args.ground_truth else None,
         "n_plans": len(results),
-        "n_ok": sum(1 for r in results if r.get("pipeline_status") == "ok"),
-        "n_errors": sum(1 for r in results if r.get("pipeline_status", "").startswith("error")),
-        "n_not_processed": sum(1 for r in results if r.get("pipeline_status") == "not_processed"),
+        "n_ok": status_counts.get("ok", 0),
+        "n_errors": status_counts.get("error", 0),
+        "n_not_processed": status_counts.get("not_processed", 0),
+        "status_counts": dict(status_counts),
         "results": results,
     }
 

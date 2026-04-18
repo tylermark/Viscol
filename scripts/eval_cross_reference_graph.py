@@ -117,7 +117,9 @@ def evaluate(output_dir: Path) -> dict:
         "total_xrefs": total_xrefs,
         "unique_targets_across_plans": unique_targets,
         "plausible_sheet_precision": round(plausible_precision, 3),
-        "category_totals_by_unique_target": dict(category_totals),
+        # Per-xref instance counts (not per-unique-target). Useful as the
+        # denominator for plausible_sheet_precision above.
+        "category_totals_by_xref": dict(category_totals),
         "top_global_targets": global_target_counts.most_common(20),
         "shared_targets": {t: v for t, v in sorted(shared_targets.items(), key=lambda kv: -len(kv[1]))[:20]},
         "per_plan": plan_summaries,
@@ -137,7 +139,7 @@ def _render_markdown(result: dict) -> str:
     lines.append("")
     lines.append("| Category | Count |")
     lines.append("|---|---:|")
-    for cat, count in sorted(result["category_totals_by_unique_target"].items(), key=lambda kv: -kv[1]):
+    for cat, count in sorted(result["category_totals_by_xref"].items(), key=lambda kv: -kv[1]):
         lines.append(f"| {cat} | {count:,} |")
     lines.append("")
     lines.append("## Top 20 globally-referenced target sheets")

@@ -451,6 +451,10 @@ def detect_walls(classified: dict, config: dict) -> tuple[list[dict], list[dict]
                     if new_len < 1e-6:
                         # Both endpoints snapped to the same junction — drop
                         # rather than halt on an otherwise-valid drawing.
+                        # Annotate the failure reason so downstream reporting
+                        # (dropped-sidecar JSON, benchmark logs) can tell this
+                        # apart from the no_junction_anchor drop above.
+                        w.setdefault("rules_failed", []).append("collapsed_anchor_snap")
                         dropped_by_anchor.append(w)
                         continue
                     w["length"] = new_len

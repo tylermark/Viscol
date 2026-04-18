@@ -36,11 +36,17 @@ the 300s cap.
 
 ### 1. Text regions (100% coverage, 11,947 instances)
 
-Every plan produces text region records. The Stage 7 classifier assigns one of
-nine classifications (room_label, room_number, sheet_callout, dimension,
-wall_schedule_tag, note, title, grid_label, unknown) to each region. Records
-carry bounding boxes, rule-triggered tags, and requires-cross-doc-validation
-flags.
+Every plan produces text region records. The Stage 7 classifier assigns one
+of nine `classification` values (`room_label`, `room_number`, `sheet_callout`,
+`dimension`, `wall_schedule_tag`, `note`, `title`, `grid_label`, `unknown`) to
+each region. Every record carries:
+
+- `bbox`: `[x0, y0, x1, y1]` bounding box in PDF points (bottom-left origin)
+- `rule_triggered`: string naming the matching heuristic (e.g.
+  `room_number_pattern`, `sheet_callout_pattern`, `multiword_note_heuristic`)
+- `requires_cross_document_validation`: boolean, set to `true` for any region
+  whose classification depends on another sheet (sheet_callout or any region
+  with non-empty `references`)
 
 **This is the richest signal Phase 2 has access to.**
 

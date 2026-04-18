@@ -52,7 +52,6 @@ def _classify_room_type_from_fixtures(
         pos = fixture.get("position") or fixture.get("centroid")
         if not pos or len(pos) < 2:
             continue
-        from shapely.geometry import Point
         if polygon.contains(Point(pos[0], pos[1])):
             # Match fixture type to room type
             for fixture_types, room_type in fixture_to_room:
