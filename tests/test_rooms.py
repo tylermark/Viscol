@@ -82,6 +82,30 @@ def test_virtual_bridge_respects_colinearity_filter():
     assert bridges == [], f"expected no colinear bridges, got {bridges}"
 
 
+def test_rotated_sliver_rejected_by_oriented_filter():
+    """A 45°-rotated 80×8 sliver has axis-aligned bbox ~63×63 (aspect 1.0),
+    but its oriented bounding rectangle is still 80×8 (aspect 10). The filter
+    must use the oriented bbox to catch it."""
+    import math as _math
+    # 80-long, 8-thick rectangle rotated 45° around origin
+    cos45 = sin45 = _math.cos(_math.radians(45))
+    def rot(x, y):
+        return (x * cos45 - y * sin45, x * sin45 + y * cos45)
+    c1 = rot(0, 0)
+    c2 = rot(80, 0)
+    c3 = rot(80, 8)
+    c4 = rot(0, 8)
+    walls = [
+        make_wall_record(c1, c2),
+        make_wall_record(c2, c3),
+        make_wall_record(c3, c4),
+        make_wall_record(c4, c1),
+    ]
+    graph = _build_graph(walls)
+    rooms = detect_rooms(graph, text_blocks=[], config=_config(enabled=False))
+    assert rooms == [], f"rotated sliver should be rejected, got {rooms}"
+
+
 def test_sliver_polygon_rejected_by_aspect_filter():
     """A long thin wall-thickness void (80×8) should be rejected as a sliver."""
     # A 80×8 rectangle — exactly the "wall thickness void" shape we saw on real plans

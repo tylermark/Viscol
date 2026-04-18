@@ -37,9 +37,12 @@ from pathlib import Path
 
 # "Real" architectural sheet IDs look like: A302, A7.1, E-101, M2.5a, S1.01
 _PLAUSIBLE_SHEET_RE = re.compile(r"^[A-Z][A-Z\-]?\d+(\.\d+[a-z]?)?$")
-# Obvious false positives we see a lot: fixture callouts ending in a period
-# (e.g. "F10.", "F09."), column grid references (A-B-C single letters), etc.
-_FIXTURE_CALLOUT_RE = re.compile(r"^[FPM]\d+\.$")  # F10., P12., M3.
+# Fixture callouts on drawings are drafted as letter+digits+trailing-period:
+# F10., E1., D03., C5., etc. Real sheet IDs never end in a bare period (they
+# either end in a digit, or in a letter suffix like "A102a"), so the trailing
+# period is a reliable discriminator — accept any single alpha prefix, not
+# just F/P/M as the original pattern did.
+_FIXTURE_CALLOUT_RE = re.compile(r"^[A-Z]\d+\.$")
 
 
 def _classify_target(target: str) -> str:

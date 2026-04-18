@@ -71,25 +71,45 @@ def _classify_room_type_from_labels(labels: list[str], patterns: dict) -> tuple[
     return "unknown", None
 
 
+def _is_valid_segment(data: dict) -> bool:
+    """Return True when the edge has both endpoints and non-zero length.
+
+    Shared by every consumer that reads a wall's start/end so they all
+    see the same set of edges. Silent skip (not raise) is intentional:
+    Stage 4 endpoint clustering can produce legitimately-zero-length
+    edges when two wall endpoints collapse to a single junction, and
+    hard-failing on them would prevent room detection on any real plan.
+    """
+    s = data.get("start")
+    e = data.get("end")
+    if s is None or e is None:
+        return False
+    if abs(s[0] - e[0]) < 1e-9 and abs(s[1] - e[1]) < 1e-9:
+        return False
+    return True
+
+
 def _edges_to_lines(graph: nx.MultiGraph) -> list[list[tuple[float, float]]]:
     lines = []
     for _u, _v, _key, data in graph.edges(keys=True, data=True):
-        s = data.get("start")
-        e = data.get("end")
-        # Skip edges with missing endpoints or effectively zero length. These can
-        # arise from endpoint clustering in Stage 4; hard-failing here would
-        # prevent room detection on any plan with incidental coincident points.
-        if s is None or e is None:
+        if not _is_valid_segment(data):
             continue
-        if abs(s[0] - e[0]) < 1e-9 and abs(s[1] - e[1]) < 1e-9:
-            continue
+        s = data["start"]
+        e = data["end"]
         lines.append([(float(s[0]), float(s[1])), (float(e[0]), float(e[1]))])
     return lines
 
 
 def _walls_by_segment_id(graph: nx.MultiGraph) -> dict[str, dict]:
+    """Return a segment_id → edge-data map, filtered to valid segments only.
+
+    Uses the same validity check as _edges_to_lines so downstream consumers
+    (bounding_walls loop, _wall_midpoint) can't trip over missing endpoints.
+    """
     walls: dict[str, dict] = {}
     for _u, _v, key, data in graph.edges(keys=True, data=True):
+        if not _is_valid_segment(data):
+            continue
         walls[key] = data
     return walls
 
@@ -260,11 +280,17 @@ def detect_rooms(
     for p in raw_polys:
         if p.area < min_area:
             continue
-        minx, miny, maxx, maxy = p.bounds
-        w = maxx - minx
-        h = maxy - miny
-        short = min(w, h)
-        long = max(w, h)
+        # Use the ORIENTED minimum bounding rectangle, not the axis-aligned
+        # bbox. A 45°-rotated 80×8 sliver has an axis-aligned bbox of ~63×63
+        # (aspect 1.0) and would escape the filter; its oriented bbox is
+        # still 80×8 (aspect 10) and correctly rejected.
+        mrr = p.minimum_rotated_rectangle
+        corners = list(mrr.exterior.coords)[:4]
+        # Two unique edge lengths from the four corners
+        edge_a = math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1])
+        edge_b = math.hypot(corners[2][0] - corners[1][0], corners[2][1] - corners[1][1])
+        short = min(edge_a, edge_b)
+        long = max(edge_a, edge_b)
         # Reject wall-thickness voids: long thin strips with aspect > N, or
         # polygons whose short dimension is thinner than a typical wall.
         if short < min_short:
@@ -338,10 +364,13 @@ def detect_rooms(
                 if room_id not in adj:
                     adj.append(room_id)
 
-        # Did this polygon's perimeter rely on any virtual gap bridge? If so
-        # the room is a gap-closed polygon — lower confidence and record the
-        # provenance so research can tell native closures from bridged ones.
-        used_virtual = any(boundary.distance(bg) <= tolerance for bg in bridge_geoms)
+        # Did this polygon's perimeter rely on any virtual gap bridge? Only
+        # bridges that actually lie on or touch the polygon's boundary count —
+        # a distance-based check would falsely tag native polygons whenever an
+        # unrelated bridge happened to run within tolerance of their perimeter.
+        used_virtual = any(
+            boundary.intersects(bg) or boundary.touches(bg) for bg in bridge_geoms
+        )
 
         if type_source is not None:
             rule = f"{type_source}:{matched_substring}"

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from datetime import date
 from pathlib import Path
 
@@ -63,7 +64,6 @@ def main(argv: list[str] | None = None) -> int:
                     )
         results.append(plan_result)
 
-    from collections import Counter
     status_counts: Counter = Counter()
     for r in results:
         raw = r.get("pipeline_status", "")

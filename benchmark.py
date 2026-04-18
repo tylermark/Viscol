@@ -51,11 +51,17 @@ def _run_with_timeout(pdf: Path, config_path: Path, output_dir: Path, timeout_s:
             future.result(timeout=timeout_s)
             return "ok", None
         except FuturesTimeoutError:
-            # Best-effort cancellation; kill any worker processes still running.
-            for proc in pool._processes.values():  # type: ignore[attr-defined]
+            # ProcessPoolExecutor has no public API to forcibly kill a worker
+            # that's mid-compute (future.cancel() only unblocks the future; the
+            # worker keeps running until it checks in). We reach into the
+            # private ._processes map to SIGTERM the child directly — the
+            # pragmatic choice on CPython and the one used in stdlib tests.
+            # The broad except/pass is deliberate: this runs during error-path
+            # cleanup and must never itself raise and hide the real timeout.
+            for proc in pool._processes.values():  # type: ignore[attr-defined]  # noqa: SLF001
                 try:
                     proc.terminate()
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001  (best-effort cleanup — never raise)
                     pass
             return "timeout", f"exceeded {timeout_s:.0f}s cap"
         except Exception as exc:
