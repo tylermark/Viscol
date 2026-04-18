@@ -1,0 +1,46 @@
+tests/test_rooms.py
+  23c064f96e8ae589 86-87,110-111,121,139-162
+benchmark.py
+  23c064f96e8ae589 165-174,196,200-204,397-398,426-430
+config.yaml
+  23c064f96e8ae589 120-122
+scripts/regen_report.py
+  23c064f96e8ae589 52-63
+stages/detect_rooms.py
+  23c064f96e8ae589 284,286
+stages/_config.py
+  23c064f96e8ae589 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "6c7959b876081d2d012714b9ce128a716c099890",
+  "prompts": {
+    "23c064f96e8ae589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089f9f16-8387-4d9c-b167-ae35b1fce6df",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 70,
+      "total_deletions": 17,
+      "accepted_lines": 1406,
+      "overriden_lines": 0
+    },
+    "cf85da87ee5d77b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "520ab9c8-2e5c-47c6-b2c4-2d56e43e4ec0",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 100,
+      "overriden_lines": 0
+    }
+  }
+}
