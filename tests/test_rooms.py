@@ -83,8 +83,8 @@ def test_virtual_bridge_respects_colinearity_filter():
 
 
 def test_rotated_sliver_rejected_by_oriented_filter():
-    """A 45°-rotated 80×8 sliver has axis-aligned bbox ~63×63 (aspect 1.0),
-    but its oriented bounding rectangle is still 80×8 (aspect 10). The filter
+    """A 45°-rotated 80x8 sliver has axis-aligned bbox ~63x63 (aspect 1.0),
+    but its oriented bounding rectangle is still 80x8 (aspect 10). The filter
     must use the oriented bbox to catch it."""
     import math as _math
     # 80-long, 8-thick rectangle rotated 45° around origin
@@ -107,8 +107,8 @@ def test_rotated_sliver_rejected_by_oriented_filter():
 
 
 def test_sliver_polygon_rejected_by_aspect_filter():
-    """A long thin wall-thickness void (80×8) should be rejected as a sliver."""
-    # A 80×8 rectangle — exactly the "wall thickness void" shape we saw on real plans
+    """A long thin wall-thickness void (80x8) should be rejected as a sliver."""
+    # A 80x8 rectangle — exactly the "wall thickness void" shape we saw on real plans
     walls = [
         make_wall_record((0, 0), (80, 0)),          # bottom face
         make_wall_record((80, 0), (80, 8)),         # right endcap
@@ -118,7 +118,7 @@ def test_sliver_polygon_rejected_by_aspect_filter():
     graph = _build_graph(walls)
     cfg = _config(enabled=False)  # no gap closure needed — rectangle is already closed
     rooms = detect_rooms(graph, text_blocks=[], config=cfg)
-    # Polygonize would produce one 80×8 polygon with area 640; the aspect filter
+    # Polygonize would produce one 80x8 polygon with area 640; the aspect filter
     # rejects it (aspect = 10 > 5) and the short-dim filter rejects it (8 < 15).
     assert rooms == [], f"expected sliver rejection, got {rooms}"
 
@@ -136,3 +136,27 @@ def test_room_type_via_label_after_gap_closure():
     # The rule_triggered prefers label_match over polygon_closure_via_virtual_gap
     # because the label classification is a stronger signal.
     assert rooms[0]["rule_triggered"].startswith("label_match:")
+
+
+def test_room_type_via_fixture_first_path():
+    """Fixture-based classification takes precedence over label classification.
+
+    When a toilet fixture sits inside the polygon, room_type resolves to
+    'bathroom' via the fixture path and rule_triggered carries the
+    'fixture_match:' prefix — even if no room-type label is inside.
+    """
+    graph = _build_graph(_closed_rectangle_with_door_gap())
+    fixtures = [
+        {"type": "toilet", "position": [200.0, 150.0]},
+    ]
+    rooms = detect_rooms(
+        graph,
+        text_blocks=[],
+        config=_config(enabled=True),
+        fixtures=fixtures,
+    )
+    assert len(rooms) == 1
+    assert rooms[0]["room_type"] == "bathroom"
+    assert rooms[0]["rule_triggered"].startswith("fixture_match:"), (
+        f"expected fixture-path provenance, got {rooms[0]['rule_triggered']!r}"
+    )

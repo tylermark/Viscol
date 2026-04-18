@@ -117,3 +117,6 @@ grid_line_axis_tolerance_deg: 5.0     # degrees — off-axis tolerance for horiz
 
 # Stage 4 — Junction Anchoring (v0.5.0, continued)
 junction_anchor_min_segments: 20      # pt — skip anchoring for small inputs (tests, synthetic) where too few endpoints form reliable clusters
+
+# Benchmark harness (not pipeline thresholds — lives here so all tunables are in one place)
+benchmark_per_plan_timeout_s: 300.0   # seconds — CLAUDE.md §6 hard cap for per-plan processing

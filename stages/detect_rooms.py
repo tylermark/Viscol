@@ -281,9 +281,9 @@ def detect_rooms(
         if p.area < min_area:
             continue
         # Use the ORIENTED minimum bounding rectangle, not the axis-aligned
-        # bbox. A 45°-rotated 80×8 sliver has an axis-aligned bbox of ~63×63
+        # bbox. A 45°-rotated 80x8 sliver has an axis-aligned bbox of ~63x63
         # (aspect 1.0) and would escape the filter; its oriented bbox is
-        # still 80×8 (aspect 10) and correctly rejected.
+        # still 80x8 (aspect 10) and correctly rejected.
         mrr = p.minimum_rotated_rectangle
         corners = list(mrr.exterior.coords)[:4]
         # Two unique edge lengths from the four corners

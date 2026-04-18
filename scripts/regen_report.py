@@ -49,9 +49,18 @@ def main(argv: list[str] | None = None) -> int:
             plan_result["pipeline_status"] = "not_processed"
             results.append(plan_result)
             continue
-        plan_result["pipeline_status"] = "ok"
-        summary = benchmark._summarize_run(pdf, args.output_dir, config)
-        plan_result.update({k: v for k, v in summary.items() if k != "plan"})
+        # _summarize_run reads the per-plan JSON. A truncated or corrupted
+        # file would otherwise kill the entire regen — skip this one, record
+        # the failure, and keep going so the rest of the batch still reports.
+        try:
+            summary = benchmark._summarize_run(pdf, args.output_dir, config)
+            plan_result["pipeline_status"] = "ok"
+            plan_result.update({k: v for k, v in summary.items() if k != "plan"})
+        except (json.JSONDecodeError, ValueError, OSError, KeyError) as exc:
+            plan_result["pipeline_status"] = "corrupted"
+            plan_result["error"] = f"{type(exc).__name__}: {exc}"
+            results.append(plan_result)
+            continue
 
         if args.ground_truth is not None:
             gt_csv = benchmark._match_ground_truth(pdf, args.ground_truth)

@@ -162,8 +162,16 @@ def _summarize_run(plan: Path, output_dir: Path, config: dict) -> dict:
     if dropped.exists():
         with dropped.open("r", encoding="utf-8") as f:
             dropped_doc = json.load(f)
-        reason_counts = Counter(s.get("reason", "unknown") for s in dropped_doc.get("segments", []))
-        result["dropped_total"] = len(dropped_doc.get("segments", []))
+        # v0.6 sidecar schema: the dropped-wall lists live under named reason
+        # buckets (dropped_by_thickness, dropped_by_isolation), not under a
+        # flat "segments" list. Merge each bucket into a single Counter so
+        # report rendering sees the same reason-keyed map it did before.
+        reason_counts: Counter = Counter()
+        for reason_key in ("dropped_by_thickness", "dropped_by_isolation"):
+            bucket = dropped_doc.get(reason_key) or []
+            if bucket:
+                reason_counts[reason_key] = len(bucket)
+        result["dropped_total"] = sum(reason_counts.values())
         result["dropped_by_reason"] = dict(reason_counts)
     return result
 
@@ -185,9 +193,14 @@ def run_benchmark(
     report_path: Path,
     config_path: Path,
     max_plans: int | None = None,
-    per_plan_timeout_s: float = 300.0,
+    per_plan_timeout_s: float | None = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve the timeout default from config.yaml so the CLAUDE.md §6 hard
+    # cap is a single tunable, not a value duplicated across call sites.
+    if per_plan_timeout_s is None:
+        per_plan_timeout_s = float(load_config(config_path)["benchmark_per_plan_timeout_s"])
 
     pdfs = _find_pdfs(plans_dir)
     if max_plans is not None:
@@ -381,8 +394,8 @@ def _render_markdown(report: dict) -> str:
         roles = r.get("role_counts", {})
         ext = roles.get("exterior", 0) if isinstance(roles, dict) else "—"
         drop_reasons = r.get("dropped_by_reason", {})
-        drop_thick = drop_reasons.get("thickness_cluster_outlier", 0)
-        drop_iso = drop_reasons.get("isolated_short_segment", 0)
+        drop_thick = drop_reasons.get("dropped_by_thickness", 0)
+        drop_iso = drop_reasons.get("dropped_by_isolation", 0)
         dropped_cell = f"{drop_thick}/{drop_iso}" if r.get("dropped_total") else "—"
         thk = r.get("thickness_median")
         thk_cell = f"{thk:.1f}" if thk else "—"
@@ -410,8 +423,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--per-plan-timeout",
         type=float,
-        default=300.0,
-        help="Per-plan wall-clock cap in seconds (CLAUDE.md §6 hard cap). Default 300.",
+        default=None,
+        help=(
+            "Per-plan wall-clock cap in seconds. Defaults to "
+            "benchmark_per_plan_timeout_s in config.yaml (CLAUDE.md §6 hard cap)."
+        ),
     )
     args = parser.parse_args(argv)
 

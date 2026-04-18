@@ -33,6 +33,7 @@ REQUIRED_KEYS = {
     "junction_anchor_enabled",
     "junction_anchor_tag_only",
     "junction_anchor_min_segments",
+    "benchmark_per_plan_timeout_s",
     "junction_anchor_min_cluster_size",
     "junction_anchor_snap_tolerance",
     "junction_raw_snap_radius",
