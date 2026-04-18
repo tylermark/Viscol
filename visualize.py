@@ -172,7 +172,14 @@ def _draw_openings(page: "fitz.Page", openings: list[dict], page_height: float) 
         pos = op.get("position")
         if not pos or len(pos) < 2:
             continue
-        t = (op.get("type") or "?")[:1].upper()
+        op_type = op.get("type") or ""
+        # "unknown" is a schema-level placeholder, not a type initial — map it
+        # to "?" along with any empty/null value. Otherwise the first letter
+        # of the type name (D / W / ...) is the badge.
+        if not op_type or op_type.lower() == "unknown":
+            t = "?"
+        else:
+            t = op_type[:1].upper()
         page.insert_text(
             fitz.Point(float(pos[0]) - 2.5, _flip_y(float(pos[1]), page_height) + 2.5),
             t,
@@ -359,27 +366,45 @@ def run(
     with pipeline_output.open("r", encoding="utf-8") as f:
         doc_data = json.load(f)
 
-    # Validate up front so malformed inputs produce an actionable error,
-    # not a bare KeyError from somewhere deep in the render path.
-    for key in ("walls", "junctions"):
-        if key not in doc_data:
+    def _require_list(field: str) -> list:
+        """Validate a required v0.6 list field, raising ValueError on drift."""
+        if field not in doc_data:
             raise ValueError(
-                f"{pipeline_output}: missing required '{key}' field "
+                f"{pipeline_output}: missing required '{field}' field "
                 "(expected v0.6 pipeline output schema)"
             )
-        if not isinstance(doc_data[key], list):
+        value = doc_data[field]
+        if not isinstance(value, list):
             raise ValueError(
-                f"{pipeline_output}: field '{key}' must be a list, "
-                f"got {type(doc_data[key]).__name__}"
+                f"{pipeline_output}: field '{field}' must be a list, "
+                f"got {type(value).__name__}"
             )
+        return value
 
-    segments = doc_data["walls"]
-    junctions = doc_data["junctions"]
-    rooms = doc_data.get("rooms") or []
-    openings = doc_data.get("openings") or []
-    grid_lines = doc_data.get("grid_lines") or []
-    text_regions = doc_data.get("text_regions") or []
-    cross_refs = doc_data.get("cross_references") or []
+    def _optional_list(field: str) -> list:
+        """Same as _require_list but the field may be absent/null.
+
+        Absent or null → empty list. Present-but-wrong-type → ValueError
+        (so we don't silently turn a malformed payload into a bogus empty
+        list and mask schema drift).
+        """
+        if field not in doc_data or doc_data[field] is None:
+            return []
+        value = doc_data[field]
+        if not isinstance(value, list):
+            raise ValueError(
+                f"{pipeline_output}: field '{field}' must be a list or null, "
+                f"got {type(value).__name__}"
+            )
+        return value
+
+    segments = _require_list("walls")
+    junctions = _require_list("junctions")
+    rooms = _optional_list("rooms")
+    openings = _optional_list("openings")
+    grid_lines = _optional_list("grid_lines")
+    text_regions = _optional_list("text_regions")
+    cross_refs = _optional_list("cross_references")
 
     role_counts: dict[str, int] = {}
     for s in segments:
@@ -392,9 +417,16 @@ def run(
         if dropped_path.exists():
             with dropped_path.open("r", encoding="utf-8") as f:
                 dropped_doc = json.load(f)
-            rejected_segments = list(dropped_doc.get("dropped_by_thickness") or []) + list(
-                dropped_doc.get("dropped_by_isolation") or []
-            )
+            for field in ("dropped_by_thickness", "dropped_by_isolation"):
+                bucket = dropped_doc.get(field)
+                if bucket is None:
+                    continue
+                if not isinstance(bucket, list):
+                    raise ValueError(
+                        f"{dropped_path}: field '{field}' must be a list or null, "
+                        f"got {type(bucket).__name__}"
+                    )
+                rejected_segments.extend(bucket)
         else:
             print(f"--show-rejected set but {dropped_path} not found; rendering without rejected overlay.")
 
