@@ -20,11 +20,52 @@ import json
 import sys
 import time
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import date
 from pathlib import Path
 
 import pipeline
 from stages._config import load_config
+
+
+def _run_pipeline_subprocess(pdf_path: str, config_path: str, output_dir: str) -> None:
+    """Top-level function so ProcessPoolExecutor can pickle it."""
+    pipeline.run(
+        pdf_path=Path(pdf_path),
+        page_num=None,
+        config_path=Path(config_path),
+        output_dir=Path(output_dir),
+    )
+
+
+def _run_with_timeout(pdf: Path, config_path: Path, output_dir: Path, timeout_s: float) -> tuple[str, str | None]:
+    """Run the pipeline on one PDF in a subprocess, killing it on timeout.
+
+    Returns (status, error_message_or_None). A timeout returns ("timeout", message).
+    """
+    with ProcessPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            _run_pipeline_subprocess, str(pdf), str(config_path), str(output_dir)
+        )
+        try:
+            future.result(timeout=timeout_s)
+            return "ok", None
+        except FuturesTimeoutError:
+            # ProcessPoolExecutor has no public API to forcibly kill a worker
+            # that's mid-compute (future.cancel() only unblocks the future; the
+            # worker keeps running until it checks in). We reach into the
+            # private ._processes map to SIGTERM the child directly — the
+            # pragmatic choice on CPython and the one used in stdlib tests.
+            # The broad except/pass is deliberate: this runs during error-path
+            # cleanup and must never itself raise and hide the real timeout.
+            for proc in pool._processes.values():  # type: ignore[attr-defined]  # noqa: SLF001
+                try:
+                    proc.terminate()
+                except Exception:  # noqa: BLE001  (best-effort cleanup — never raise)
+                    pass
+            return "timeout", f"exceeded {timeout_s:.0f}s cap"
+        except Exception as exc:
+            return "error", f"{type(exc).__name__}: {exc}"
 
 
 def _find_pdfs(plans_dir: Path) -> list[Path]:
@@ -93,13 +134,24 @@ def _summarize_run(plan: Path, output_dir: Path, config: dict) -> dict:
     role_counts = Counter(s["semantic"]["functional_role"] for s in doc["walls"])
     thicknesses = [s["geometry"]["thickness"] for s in doc["walls"]]
     lengths = [s["geometry"]["centerline_length"] for s in doc["walls"]]
+    room_type_counts = Counter(r.get("room_type") or "unknown" for r in doc.get("rooms", []))
+    text_class_counts = Counter(
+        t.get("classification") or "unknown" for t in doc.get("text_regions", [])
+    )
 
     result.update(
         {
             "status": "ok",
             "walls": len(doc["walls"]),
             "junctions": len(doc["junctions"]),
+            "rooms": len(doc.get("rooms", [])),
+            "openings": len(doc.get("openings", [])),
+            "text_regions": len(doc.get("text_regions", [])),
+            "grid_lines": len(doc.get("grid_lines", [])),
+            "cross_references": len(doc.get("cross_references", [])),
             "role_counts": dict(role_counts),
+            "room_type_counts": dict(room_type_counts),
+            "text_class_counts": dict(text_class_counts),
             "thickness_median": _median(thicknesses) if thicknesses else None,
             "thickness_min": min(thicknesses) if thicknesses else None,
             "thickness_max": max(thicknesses) if thicknesses else None,
@@ -110,8 +162,16 @@ def _summarize_run(plan: Path, output_dir: Path, config: dict) -> dict:
     if dropped.exists():
         with dropped.open("r", encoding="utf-8") as f:
             dropped_doc = json.load(f)
-        reason_counts = Counter(s.get("reason", "unknown") for s in dropped_doc.get("segments", []))
-        result["dropped_total"] = len(dropped_doc.get("segments", []))
+        # v0.6 sidecar schema: the dropped-wall lists live under named reason
+        # buckets (dropped_by_thickness, dropped_by_isolation), not under a
+        # flat "segments" list. Merge each bucket into a single Counter so
+        # report rendering sees the same reason-keyed map it did before.
+        reason_counts: Counter = Counter()
+        for reason_key in ("dropped_by_thickness", "dropped_by_isolation"):
+            bucket = dropped_doc.get(reason_key) or []
+            if bucket:
+                reason_counts[reason_key] = len(bucket)
+        result["dropped_total"] = sum(reason_counts.values())
         result["dropped_by_reason"] = dict(reason_counts)
     return result
 
@@ -133,8 +193,14 @@ def run_benchmark(
     report_path: Path,
     config_path: Path,
     max_plans: int | None = None,
+    per_plan_timeout_s: float | None = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Resolve the timeout default from config.yaml so the CLAUDE.md §6 hard
+    # cap is a single tunable, not a value duplicated across call sites.
+    if per_plan_timeout_s is None:
+        per_plan_timeout_s = float(load_config(config_path)["benchmark_per_plan_timeout_s"])
 
     pdfs = _find_pdfs(plans_dir)
     if max_plans is not None:
@@ -150,16 +216,13 @@ def run_benchmark(
             "stem": pdf.stem,
             "size_mb": round(pdf.stat().st_size / (1024 * 1024), 2),
         }
-        try:
-            pipeline.run(
-                pdf_path=pdf,
-                page_num=None,
-                config_path=config_path,
-                output_dir=output_dir,
-            )
+        status, err = _run_with_timeout(pdf, config_path, output_dir, per_plan_timeout_s)
+        if status == "ok":
             plan_result["pipeline_status"] = "ok"
-        except Exception as exc:
-            plan_result["pipeline_status"] = f"error: {type(exc).__name__}: {exc}"
+        elif status == "timeout":
+            plan_result["pipeline_status"] = f"timeout: {err}"
+        else:
+            plan_result["pipeline_status"] = f"error: {err}"
         plan_result["wall_time_seconds"] = round(time.time() - t0, 2)
 
         # Only summarize on a fresh successful run — otherwise stale output JSONs
@@ -169,6 +232,17 @@ def run_benchmark(
             plan_result.update({k: v for k, v in summary.items() if k != "plan"})
         else:
             plan_result["status"] = "error"
+            # Remove any stale/partial JSONs left over from a prior run (or
+            # written mid-pipeline before the subprocess was killed on timeout).
+            # regen_report.py reads the same directory; leaving old files there
+            # would cause it to count pre-timeout results as this run's output.
+            for suffix in (".json", "_dropped.json", ".invalid.json"):
+                stale = output_dir / f"{pdf.stem}{suffix}"
+                try:
+                    if stale.exists():
+                        stale.unlink()
+                except OSError as exc:
+                    print(f"  warning: failed to remove {stale}: {exc}", file=sys.stderr)
 
         if gt_dir is not None:
             gt_csv = _match_ground_truth(pdf, gt_dir)
@@ -183,14 +257,25 @@ def run_benchmark(
 
         results.append(plan_result)
 
+    # Normalize pipeline_status into a bucket name (the prefix before ":"),
+    # so "timeout: exceeded 300s cap" buckets as "timeout" and every outcome
+    # surfaces in status_counts rather than silently disappearing.
+    status_counts: Counter = Counter()
+    for r in results:
+        raw = r.get("pipeline_status", "")
+        bucket = raw.split(":", 1)[0] if raw else "unknown"
+        status_counts[bucket] += 1
+
     report = {
         "benchmark_date": date.today().isoformat(),
         "pipeline_version": pipeline.PIPELINE_VERSION,
         "plans_dir": str(plans_dir),
         "ground_truth_dir": str(gt_dir) if gt_dir else None,
         "n_plans": len(results),
-        "n_ok": sum(1 for r in results if r.get("pipeline_status") == "ok"),
-        "n_errors": sum(1 for r in results if r.get("pipeline_status", "").startswith("error")),
+        # Backward-compatible aggregates (derived from status_counts).
+        "n_ok": status_counts.get("ok", 0),
+        "n_errors": status_counts.get("error", 0),
+        "status_counts": dict(status_counts),
         "results": results,
     }
 
@@ -212,7 +297,12 @@ def _render_markdown(report: dict) -> str:
     lines.append(f"# Benchmark report — v{report['pipeline_version']}")
     lines.append("")
     lines.append(f"- **Date:** {report['benchmark_date']}")
-    lines.append(f"- **Plans:** {report['n_plans']} ({report['n_ok']} ok, {report['n_errors']} errors)")
+    status_counts = report.get("status_counts") or {
+        "ok": report.get("n_ok", 0),
+        "error": report.get("n_errors", 0),
+    }
+    status_pretty = ", ".join(f"{v} {k}" for k, v in sorted(status_counts.items(), key=lambda kv: -kv[1]))
+    lines.append(f"- **Plans:** {report['n_plans']} ({status_pretty})")
     lines.append(f"- **Plans dir:** `{report['plans_dir']}`")
     if report["ground_truth_dir"]:
         lines.append(f"- **Ground truth dir:** `{report['ground_truth_dir']}`")
@@ -241,35 +331,79 @@ def _render_markdown(report: dict) -> str:
             )
         lines.append("")
 
-    lines.append("## Per-plan results")
+    # ----- v0.6 entity-coverage aggregate -----
+    if ok:
+        def _frac(entity: str) -> float:
+            return sum(1 for r in ok if (r.get(entity) or 0) > 0) / len(ok)
+
+        lines.append("## Entity coverage (v0.6) — fraction of plans with ≥1 entity of each type")
+        lines.append("")
+        lines.append(f"- Walls:            {_frac('walls'):.0%} ({len(ok)} plans)")
+        lines.append(f"- Rooms:            {_frac('rooms'):.0%}")
+        lines.append(f"- Openings:         {_frac('openings'):.0%}")
+        lines.append(f"- Text regions:     {_frac('text_regions'):.0%}")
+        lines.append(f"- Grid lines:       {_frac('grid_lines'):.0%}")
+        lines.append(f"- Cross-references: {_frac('cross_references'):.0%}")
+        lines.append("")
+        # Aggregated room-type distribution
+        rt_total: Counter = Counter()
+        for r in ok:
+            rt_total.update(r.get("room_type_counts") or {})
+        if rt_total:
+            lines.append(f"- Room types (across all plans): {dict(rt_total)}")
+        lines.append("")
+
+    lines.append("## Per-plan v0.6 entity counts")
     lines.append("")
     lines.append(
-        "| Plan | Status | Walls | Junct. | Ext. | Dropped (thick/iso) | Thk(med) | GT walls* | Det. rate |"
+        "| Plan | Status | Walls | Rooms | Open | Text | Grid | XRef | GT walls* | Det. rate |"
     )
-    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
     for r in report["results"]:
         status = r.get("pipeline_status", "?")
         status_cell = "✓" if status == "ok" else f"✗ {status[:40]}"
         walls = r.get("walls", "—")
-        junct = r.get("junctions", "—")
-        roles = r.get("role_counts", {})
-        ext = roles.get("exterior", 0) if isinstance(roles, dict) else "—"
-        drop_reasons = r.get("dropped_by_reason", {})
-        drop_thick = drop_reasons.get("thickness_cluster_outlier", 0)
-        drop_iso = drop_reasons.get("isolated_short_segment", 0)
-        dropped_cell = f"{drop_thick}/{drop_iso}" if r.get("dropped_total") else "—"
-        thk = r.get("thickness_median")
-        thk_cell = f"{thk:.1f}" if thk else "—"
+        rooms = r.get("rooms", "—")
+        openings = r.get("openings", "—")
+        text_r = r.get("text_regions", "—")
+        grid = r.get("grid_lines", "—")
+        xref = r.get("cross_references", "—")
         gt_walls = r.get("estimated_gt_walls", "—")
         det_rate = r.get("detection_rate", "—")
         det_rate_cell = f"{det_rate:.2f}" if isinstance(det_rate, (int, float)) else "—"
-        # Truncate plan name
         name = r.get("plan", "")
         if len(name) > 55:
             name = name[:52] + "…"
         lines.append(
-            f"| {name} | {status_cell} | {walls} | {junct} | {ext} | "
-            f"{dropped_cell} | {thk_cell} | {gt_walls} | {det_rate_cell} |"
+            f"| {name} | {status_cell} | {walls} | {rooms} | {openings} | "
+            f"{text_r} | {grid} | {xref} | {gt_walls} | {det_rate_cell} |"
+        )
+
+    # Secondary wall-detail table (thickness, dropped, role breakdown)
+    lines.append("")
+    lines.append("## Per-plan wall details")
+    lines.append("")
+    lines.append(
+        "| Plan | Junct. | Ext. | Dropped (thick/iso) | Thk(med) |"
+    )
+    lines.append("|---|---:|---:|---:|---:|")
+    for r in report["results"]:
+        if r.get("pipeline_status") != "ok":
+            continue
+        junct = r.get("junctions", "—")
+        roles = r.get("role_counts", {})
+        ext = roles.get("exterior", 0) if isinstance(roles, dict) else "—"
+        drop_reasons = r.get("dropped_by_reason", {})
+        drop_thick = drop_reasons.get("dropped_by_thickness", 0)
+        drop_iso = drop_reasons.get("dropped_by_isolation", 0)
+        dropped_cell = f"{drop_thick}/{drop_iso}" if r.get("dropped_total") else "—"
+        thk = r.get("thickness_median")
+        thk_cell = f"{thk:.1f}" if thk else "—"
+        name = r.get("plan", "")
+        if len(name) > 55:
+            name = name[:52] + "…"
+        lines.append(
+            f"| {name} | {junct} | {ext} | {dropped_cell} | {thk_cell} |"
         )
 
     lines.append("")
@@ -286,6 +420,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=Path("config.yaml"))
     parser.add_argument("--report", type=Path, default=None, help="Output markdown report path.")
     parser.add_argument("--max-plans", type=int, default=None)
+    parser.add_argument(
+        "--per-plan-timeout",
+        type=float,
+        default=None,
+        help=(
+            "Per-plan wall-clock cap in seconds. Defaults to "
+            "benchmark_per_plan_timeout_s in config.yaml (CLAUDE.md §6 hard cap)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.report is None:
@@ -298,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
         report_path=args.report,
         config_path=args.config,
         max_plans=args.max_plans,
+        per_plan_timeout_s=args.per_plan_timeout,
     )
     return 0
 

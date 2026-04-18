@@ -15,11 +15,12 @@ opaque heuristics.
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
 
 import networkx as nx
-from shapely.geometry import MultiLineString, Point, Polygon
+from shapely.geometry import LineString, MultiLineString, Point, Polygon
 from shapely.ops import polygonize, unary_union
 
 
@@ -51,7 +52,6 @@ def _classify_room_type_from_fixtures(
         pos = fixture.get("position") or fixture.get("centroid")
         if not pos or len(pos) < 2:
             continue
-        from shapely.geometry import Point
         if polygon.contains(Point(pos[0], pos[1])):
             # Match fixture type to room type
             for fixture_types, room_type in fixture_to_room:
@@ -71,26 +71,153 @@ def _classify_room_type_from_labels(labels: list[str], patterns: dict) -> tuple[
     return "unknown", None
 
 
+def _is_valid_segment(data: dict) -> bool:
+    """Return True when the edge has both endpoints and non-zero length.
+
+    Shared by every consumer that reads a wall's start/end so they all
+    see the same set of edges. Silent skip (not raise) is intentional:
+    Stage 4 endpoint clustering can produce legitimately-zero-length
+    edges when two wall endpoints collapse to a single junction, and
+    hard-failing on them would prevent room detection on any real plan.
+    """
+    s = data.get("start")
+    e = data.get("end")
+    if s is None or e is None:
+        return False
+    if abs(s[0] - e[0]) < 1e-9 and abs(s[1] - e[1]) < 1e-9:
+        return False
+    return True
+
+
 def _edges_to_lines(graph: nx.MultiGraph) -> list[list[tuple[float, float]]]:
     lines = []
     for _u, _v, _key, data in graph.edges(keys=True, data=True):
-        s = data.get("start")
-        e = data.get("end")
-        if s is None:
-            raise ValueError(f"Edge ({_u}, {_v}, key={_key}) missing 'start' attribute")
-        if e is None:
-            raise ValueError(f"Edge ({_u}, {_v}, key={_key}) missing 'end' attribute")
-        if s == e or (abs(s[0] - e[0]) < 1e-9 and abs(s[1] - e[1]) < 1e-9):
-            raise ValueError(f"Edge ({_u}, {_v}, key={_key}) has zero length: start={s}, end={e}")
+        if not _is_valid_segment(data):
+            continue
+        s = data["start"]
+        e = data["end"]
         lines.append([(float(s[0]), float(s[1])), (float(e[0]), float(e[1]))])
     return lines
 
 
 def _walls_by_segment_id(graph: nx.MultiGraph) -> dict[str, dict]:
+    """Return a segment_id → edge-data map, filtered to valid segments only.
+
+    Uses the same validity check as _edges_to_lines so downstream consumers
+    (bounding_walls loop, _wall_midpoint) can't trip over missing endpoints.
+    """
     walls: dict[str, dict] = {}
     for _u, _v, key, data in graph.edges(keys=True, data=True):
+        if not _is_valid_segment(data):
+            continue
         walls[key] = data
     return walls
+
+
+def _outward_direction(graph: nx.MultiGraph, node: str) -> tuple[float, float] | None:
+    """Unit vector pointing from ``node`` along its single incident wall.
+
+    Only meaningful for degree-1 nodes (endpoint junctions). Returns None if
+    the node has no incident edges or the incident edge has zero length.
+
+    The outward direction is node→other_endpoint, i.e. along the wall pointing
+    AWAY from ``node``.
+    """
+    here = graph.nodes[node].get("position")
+    if here is None:
+        return None
+    incident = list(graph.edges(node, data=True))
+    if not incident:
+        return None
+    u, v, _data = incident[0]
+    other = v if u == node else u
+    other_pos = graph.nodes[other].get("position")
+    if other_pos is None:
+        return None
+    dx = float(other_pos[0]) - float(here[0])
+    dy = float(other_pos[1]) - float(here[1])
+    n = math.hypot(dx, dy)
+    if n < 1e-9:
+        return None
+    return (dx / n, dy / n)
+
+
+def _find_virtual_gap_bridges(
+    graph: nx.MultiGraph,
+    max_distance: float,
+    max_angle_drift_deg: float,
+) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    """Return a list of virtual line segments ((x0, y0), (x1, y1)) that bridge
+    near-colinear endpoint pairs — for feeding into ``polygonize()`` only.
+
+    Two endpoints pair-bridge if:
+    - Both are degree-1 nodes in ``graph``
+    - Their positions are within ``max_distance``
+    - Each endpoint's incident wall points "outward toward the other endpoint"
+      within ``max_angle_drift_deg``. This filters spurious bridges where two
+      unrelated dead-end stubs happen to be close but aren't on a shared wall.
+
+    Each endpoint participates in at most one bridge (nearest neighbor wins).
+    """
+    # Gather all endpoint nodes with positions
+    endpoints: list[tuple[str, tuple[float, float], tuple[float, float]]] = []
+    for node in graph.nodes():
+        if graph.degree(node) != 1:
+            continue
+        pos = graph.nodes[node].get("position")
+        if pos is None:
+            continue
+        direction = _outward_direction(graph, node)
+        if direction is None:
+            continue
+        endpoints.append((node, (float(pos[0]), float(pos[1])), direction))
+
+    if len(endpoints) < 2:
+        return []
+
+    cos_threshold = math.cos(math.radians(max_angle_drift_deg))
+
+    # For each endpoint, find the nearest qualifying partner — a classic
+    # O(n²) sweep. Endpoint counts in practice are in the hundreds, not
+    # thousands, so this is fine.
+    best_partner: dict[str, tuple[str, float]] = {}
+    for i, (n_a, pos_a, dir_a) in enumerate(endpoints):
+        for j, (n_b, pos_b, dir_b) in enumerate(endpoints):
+            if i == j:
+                continue
+            gap_x = pos_b[0] - pos_a[0]
+            gap_y = pos_b[1] - pos_a[1]
+            gap_len = math.hypot(gap_x, gap_y)
+            if gap_len < 1e-9 or gap_len > max_distance:
+                continue
+            gap_ux, gap_uy = gap_x / gap_len, gap_y / gap_len
+            # Each wall should point AWAY from its own endpoint, so the outward
+            # direction from A should oppose the gap direction (A→B) and the
+            # outward from B should oppose the reverse (B→A). Equivalently,
+            # -dir_a · gap_unit ≈ 1 and dir_b · gap_unit ≈ 1.
+            colinear_a = -dir_a[0] * gap_ux - dir_a[1] * gap_uy
+            colinear_b = dir_b[0] * gap_ux + dir_b[1] * gap_uy
+            if colinear_a < cos_threshold or colinear_b < cos_threshold:
+                continue
+            cur = best_partner.get(n_a)
+            if cur is None or gap_len < cur[1]:
+                best_partner[n_a] = (n_b, gap_len)
+
+    # Only emit a bridge when both endpoints prefer each other (mutual nearest)
+    # to keep bridges unambiguous and avoid over-connecting.
+    bridges: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    seen: set[frozenset[str]] = set()
+    node_to_pos = {n: p for n, p, _ in endpoints}
+    for a, (b, _d) in best_partner.items():
+        partner_of_b = best_partner.get(b)
+        if partner_of_b is None or partner_of_b[0] != a:
+            continue
+        key = frozenset({a, b})
+        if key in seen:
+            continue
+        seen.add(key)
+        bridges.append((node_to_pos[a], node_to_pos[b]))
+    return bridges
 
 
 def _wall_midpoint(data: dict) -> tuple[float, float]:
@@ -121,17 +248,56 @@ def detect_rooms(
     type_patterns = dict(config.get("room_type_label_patterns") or {})
     room_number_regex = re.compile(config["text_room_number_pattern"])
 
-    # Validate graph connectivity before attempting polygonization
-    if not nx.is_connected(graph):
-        raise ValueError("Wall graph is disconnected; cannot reliably polygonize rooms")
-
+    # Do NOT require graph connectivity — per the module docstring, real floor-
+    # plan wall graphs are almost always disconnected (door openings, drafting
+    # gaps, disjoint wings). polygonize() handles multi-component graphs fine;
+    # it returns whatever closes cleanly.
     lines = _edges_to_lines(graph)
     if not lines:
-        raise ValueError("No valid wall segments found in graph; cannot detect rooms")
+        return []
 
-    merged = unary_union(MultiLineString(lines))
+    # Virtual gap closure: real floor plans rarely have fully closed wall loops
+    # because doorways/arches/drafting gaps break every room's perimeter. We
+    # add near-colinear endpoint bridges to the MultiLineString fed into
+    # polygonize() only; the wall graph itself is untouched.
+    virtual_bridges: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    if bool(config.get("room_gap_close_enabled", False)):
+        virtual_bridges = _find_virtual_gap_bridges(
+            graph,
+            max_distance=float(config["room_gap_close_max_distance"]),
+            max_angle_drift_deg=float(config["room_gap_close_max_angle_drift_deg"]),
+        )
+    all_lines = list(lines)
+    for a, b in virtual_bridges:
+        all_lines.append([a, b])
+    bridge_geoms = [LineString([a, b]) for a, b in virtual_bridges]
+
+    merged = unary_union(MultiLineString(all_lines))
     raw_polys = list(polygonize(merged))
-    candidate_polys = [p for p in raw_polys if p.area >= min_area]
+    max_aspect = float(config["room_max_aspect_ratio"])
+    min_short = float(config["room_min_short_dimension"])
+    candidate_polys: list[Polygon] = []
+    for p in raw_polys:
+        if p.area < min_area:
+            continue
+        # Use the ORIENTED minimum bounding rectangle, not the axis-aligned
+        # bbox. A 45°-rotated 80x8 sliver has an axis-aligned bbox of ~63x63
+        # (aspect 1.0) and would escape the filter; its oriented bbox is
+        # still 80x8 (aspect 10) and correctly rejected.
+        mrr = p.minimum_rotated_rectangle
+        corners = list(mrr.exterior.coords)[:4]
+        # Two unique edge lengths from the four corners
+        edge_a = math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1])
+        edge_b = math.hypot(corners[2][0] - corners[1][0], corners[2][1] - corners[1][1])
+        short = min(edge_a, edge_b)
+        long = max(edge_a, edge_b)
+        # Reject wall-thickness voids: long thin strips with aspect > N, or
+        # polygons whose short dimension is thinner than a typical wall.
+        if short < min_short:
+            continue
+        if short > 1e-9 and (long / short) > max_aspect:
+            continue
+        candidate_polys.append(p)
     if not candidate_polys:
         return []
 
@@ -158,11 +324,17 @@ def detect_rooms(
                 label_texts.append(tb.get("text") or "")
                 label_region_ids.append(tb.get("_text_region_id") or "")
 
-        # Try fixture-based typing first (if fixtures are available)
+        # Try fixture-based typing first (if fixtures are available); fall back
+        # to label-based typing. Track which classifier fired so rule_triggered
+        # can accurately name the source.
+        type_source: str | None = None
         room_type, matched_substring = _classify_room_type_from_fixtures(poly, fixtures)
-        if room_type is None:
-            # Fall back to label-based typing
+        if room_type is not None:
+            type_source = "fixture_match"
+        else:
             room_type, matched_substring = _classify_room_type_from_labels(label_texts, type_patterns)
+            if matched_substring is not None:
+                type_source = "label_match"
 
         # Room name/number: split the first non-empty label into number + name if possible.
         # A label that matches the room-number pattern (e.g. "101", "203a") is a number —
@@ -192,6 +364,21 @@ def detect_rooms(
                 if room_id not in adj:
                     adj.append(room_id)
 
+        # Did this polygon's perimeter rely on any virtual gap bridge? Only
+        # bridges that actually lie on or touch the polygon's boundary count —
+        # a distance-based check would falsely tag native polygons whenever an
+        # unrelated bridge happened to run within tolerance of their perimeter.
+        used_virtual = any(
+            boundary.intersects(bg) or boundary.touches(bg) for bg in bridge_geoms
+        )
+
+        if type_source is not None:
+            rule = f"{type_source}:{matched_substring}"
+        elif used_virtual:
+            rule = "polygon_closure_via_virtual_gap"
+        else:
+            rule = "polygon_closure"
+
         centroid = poly.centroid
         rooms.append(
             {
@@ -206,11 +393,7 @@ def detect_rooms(
                 "room_type": room_type,
                 "_label_texts": label_texts,  # internal for cross-stage wiring
                 "_matched_substring": matched_substring,
-                "rule_triggered": (
-                    f"fixture_match:{matched_substring}" if matched_substring and room_type != "unknown"
-                    else f"label_match:{matched_substring}" if matched_substring
-                    else "polygon_closure"
-                ),
+                "rule_triggered": rule,
                 "requires_cross_document_validation": False,
             }
         )
