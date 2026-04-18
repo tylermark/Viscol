@@ -351,10 +351,27 @@ def run(
     entities: set[str] | None = None,
     show_rejected: bool = False,
 ) -> Path:
-    entities = entities or set(ENTITY_CHOICES)
+    # Use `is None` so an explicitly-empty set (caller saying "draw nothing")
+    # is preserved — `entities or ...` would replace set() with the default.
+    if entities is None:
+        entities = set(ENTITY_CHOICES)
 
     with pipeline_output.open("r", encoding="utf-8") as f:
         doc_data = json.load(f)
+
+    # Validate up front so malformed inputs produce an actionable error,
+    # not a bare KeyError from somewhere deep in the render path.
+    for key in ("walls", "junctions"):
+        if key not in doc_data:
+            raise ValueError(
+                f"{pipeline_output}: missing required '{key}' field "
+                "(expected v0.6 pipeline output schema)"
+            )
+        if not isinstance(doc_data[key], list):
+            raise ValueError(
+                f"{pipeline_output}: field '{key}' must be a list, "
+                f"got {type(doc_data[key]).__name__}"
+            )
 
     segments = doc_data["walls"]
     junctions = doc_data["junctions"]
