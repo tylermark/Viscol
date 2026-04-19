@@ -7,17 +7,39 @@ evaluation answers those questions.
 
 This doc walks through the labeling loop end-to-end.
 
-## TL;DR
+## TL;DR (browser-based UI, recommended)
+
+```bash
+# 1. Generate a self-contained HTML labeling page (no server, no install)
+python scripts/render_labeling_ui.py \
+    output/benchmark/<plan>.json \
+    <plan>.pdf \
+    --out output/labeling_ui/<plan>.html
+
+# 2. Open the .html file in any browser.
+#    - Click a room polygon on the plan to select it.
+#    - Use the dropdown in the sidebar to set `correct_type`.
+#    - Check/uncheck detected sheet references to keep/drop them.
+#    - Paste any missed sheet refs into the textarea.
+#    - Click "Download YAML" when done; file is named <stem>.labels.yaml.
+
+# 3. Drop the downloaded YAML into evaluation/labels/ and run the eval
+mv ~/Downloads/<stem>.labels.yaml evaluation/labels/
+python scripts/eval_coordinator_tasks.py \
+    evaluation/labels/<stem>.labels.yaml \
+    output/benchmark/<plan>.json
+```
+
+## TL;DR (YAML-only, for power users)
 
 ```bash
 # 1. Generate a pre-filled YAML template for a plan you've already extracted
 python scripts/generate_labeling_template.py output/benchmark/<plan>.json
 
-# 2. Open the annotated PDF for visual reference (requires feat/v06-visualizer)
-#    and open the YAML in your editor
+# 2. (Optional) Open the annotated PDF for visual reference
 python visualize.py output/benchmark/<plan>.json <plan>.pdf --out <plan>_annotated.pdf
 
-# 3. Fill in the YAML — mostly editing `correct_type` and `valid_targets`
+# 3. Edit the YAML by hand — mostly `correct_type` and `valid_targets`
 #    (see "What to edit" below)
 
 # 4. Run the evaluation
@@ -38,6 +60,24 @@ to **reviewing** the extraction and **editing** it in-place:
 - *Did we miss any obvious rooms?*
 
 Per-plan labeling time drops from hours to roughly 15–30 minutes.
+
+## The browser UI
+
+`scripts/render_labeling_ui.py` produces a single self-contained HTML file
+per plan:
+
+- Embeds the rendered PDF page as a base64 PNG (no external assets)
+- Draws every detected room as a clickable SVG polygon colored by current
+  `correct_type`
+- Sidebar: per-room dropdown, cross-reference checkboxes, missed-targets
+  textarea, progress counter
+- "Download YAML" button serializes the state to an eval-ready YAML file
+- "Load YAML" button lets you resume a previous session (drag a partially-
+  labeled YAML back in and your selections rehydrate)
+
+It's fully offline — runs in any browser without a server or extra install.
+Rendered file is ~1–3 MB depending on the source PDF (most of that is the
+embedded page image).
 
 ## The labeling template
 
