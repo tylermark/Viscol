@@ -51,8 +51,65 @@ ROOM_TYPE_FILL = {
 }
 
 
-def _render_page_as_png(source_pdf: Path, page_num: int, dpi: int) -> tuple[bytes, float, float]:
-    """Return (png_bytes, page_width_pts, page_height_pts)."""
+class _PageGeometry:
+    """Everything needed to map pipeline schema coords to rendered-PNG pixels.
+
+    The pipeline's extract_paths flips y using `page.rect.height` on points
+    that PyMuPDF returned in MediaBox (pre-rotation) space. That mixes two
+    coord systems whenever the PDF has a non-zero /Rotate flag. To paint an
+    overlay that aligns with the rendered PNG we have to:
+
+      1. Inverse the pipeline's flip (schema → mediabox coords)
+      2. Apply the MediaBox→rect rotation transform
+      3. Scale rect coords to image pixels
+
+    This class centralises all four dimensions and the rotation so the
+    conversion is a single clean function.
+    """
+
+    def __init__(
+        self,
+        mediabox_width: float,
+        mediabox_height: float,
+        rect_width: float,
+        rect_height: float,
+        rotation: int,
+        image_width: float,
+        image_height: float,
+    ) -> None:
+        self.mbw = mediabox_width
+        self.mbh = mediabox_height
+        self.rw = rect_width
+        self.rh = rect_height
+        self.rotation = rotation % 360
+        self.iw = image_width
+        self.ih = image_height
+
+    def to_image_px(self, schema_x: float, schema_y: float) -> tuple[float, float]:
+        # Step 1: recover native mediabox coords (inverse of pipeline flip,
+        # which used page.rect.height — we follow the same convention).
+        mbx = schema_x
+        mby = self.rh - schema_y
+
+        # Step 2: rotate mediabox point into rect (both top-left origin).
+        if self.rotation == 0:
+            rx, ry = mbx, mby
+        elif self.rotation == 90:
+            rx, ry = self.mbh - mby, mbx
+        elif self.rotation == 180:
+            rx, ry = self.mbw - mbx, self.mbh - mby
+        elif self.rotation == 270:
+            rx, ry = mby, self.mbw - mbx
+        else:
+            # Unusual rotation (e.g. 45°) isn't supported by PDF/A anyway.
+            raise ValueError(f"Unsupported /Rotate={self.rotation}; expected 0/90/180/270.")
+
+        # Step 3: scale to image pixels.
+        return rx * (self.iw / self.rw), ry * (self.ih / self.rh)
+
+
+def _render_page_as_png(source_pdf: Path, page_num: int, dpi: int) -> tuple[bytes, _PageGeometry]:
+    """Render page to PNG and return the geometry needed for overlay mapping."""
     doc = fitz.open(source_pdf)
     try:
         if page_num < 0 or page_num >= doc.page_count:
@@ -61,45 +118,33 @@ def _render_page_as_png(source_pdf: Path, page_num: int, dpi: int) -> tuple[byte
         scale = dpi / 72.0
         matrix = fitz.Matrix(scale, scale)
         pix = page.get_pixmap(matrix=matrix, alpha=False)
-        return pix.tobytes("png"), float(page.rect.width), float(page.rect.height)
+        geom = _PageGeometry(
+            mediabox_width=float(page.mediabox.width),
+            mediabox_height=float(page.mediabox.height),
+            rect_width=float(page.rect.width),
+            rect_height=float(page.rect.height),
+            rotation=int(page.rotation),
+            image_width=float(pix.width),
+            image_height=float(pix.height),
+        )
+        return pix.tobytes("png"), geom
     finally:
         doc.close()
 
 
-def _room_polygon_to_svg(
-    polygon: list[list[float]],
-    page_height: float,
-    image_width: float,
-    image_height: float,
-    page_width: float,
-) -> str:
-    """Convert a room polygon from schema coords (bottom-left origin, PDF points)
-    to SVG viewBox coords matching the embedded PNG."""
+def _room_polygon_to_svg(polygon: list[list[float]], geom: _PageGeometry) -> str:
+    """Convert a room polygon from schema coords to SVG viewBox coords
+    matching the embedded PNG, accounting for PDF rotation."""
     if not polygon:
         return ""
-    sx = image_width / page_width
-    sy = image_height / page_height
     points = []
     for pt in polygon:
-        x_pdf = float(pt[0])
-        y_pdf = float(pt[1])
-        # Schema is bottom-left; SVG / PNG are top-left, so flip y.
-        x_px = x_pdf * sx
-        y_px = (page_height - y_pdf) * sy
-        points.append(f"{x_px:.2f},{y_px:.2f}")
+        px, py = geom.to_image_px(float(pt[0]), float(pt[1]))
+        points.append(f"{px:.2f},{py:.2f}")
     return " ".join(points)
 
 
-def build_html(
-    doc: dict,
-    png_bytes: bytes,
-    page_width_pts: float,
-    page_height_pts: float,
-    dpi: int,
-) -> str:
-    image_width = page_width_pts * dpi / 72.0
-    image_height = page_height_pts * dpi / 72.0
-
+def build_html(doc: dict, png_bytes: bytes, geom: _PageGeometry) -> str:
     # Pre-compute SVG-ready polygon strings keyed by room_id.
     rooms_for_js = []
     for room in (doc.get("rooms") or []):
@@ -110,10 +155,7 @@ def build_html(
             "detected_type": room.get("room_type") or "unknown",
             "room_name": room.get("room_name"),
             "room_number": room.get("room_number"),
-            "svg_points": _room_polygon_to_svg(
-                room.get("polygon") or [],
-                page_height_pts, image_width, image_height, page_width_pts,
-            ),
+            "svg_points": _room_polygon_to_svg(room.get("polygon") or [], geom),
         })
 
     xref_targets = sorted({
@@ -128,8 +170,9 @@ def build_html(
         "plan_stem": doc.get("metadata", {}).get("source_pdf") or "",
         "source_pdf": doc.get("metadata", {}).get("source_pdf"),
         "pipeline_version": doc.get("metadata", {}).get("pipeline_version"),
-        "image_width": image_width,
-        "image_height": image_height,
+        "image_width": geom.iw,
+        "image_height": geom.ih,
+        "pdf_rotation": geom.rotation,
         "image_b64": b64,
         "rooms": rooms_for_js,
         "xref_targets": list(xref_targets),
@@ -570,8 +613,8 @@ def main(argv: list[str] | None = None) -> int:
     with args.pipeline_output.open("r", encoding="utf-8") as f:
         doc = json.load(f)
 
-    png_bytes, page_w, page_h = _render_page_as_png(args.source_pdf, args.page, args.dpi)
-    html = build_html(doc, png_bytes, page_w, page_h, args.dpi)
+    png_bytes, geom = _render_page_as_png(args.source_pdf, args.page, args.dpi)
+    html = build_html(doc, png_bytes, geom)
 
     out_path = args.out or Path("output") / "labeling_ui" / f"{args.pipeline_output.stem}.html"
     out_path.parent.mkdir(parents=True, exist_ok=True)
