@@ -58,7 +58,6 @@ def test_build_html_embeds_rooms_and_xrefs():
     html = build_html(doc, b"\x89PNG\r\n\x1a\nfakepng", _geom())
 
     assert "__CONTEXT_JSON__" not in html, "placeholder should be replaced"
-    assert "data:image/png;base64," not in html or True  # the image src is constructed in JS
     # The context payload is embedded as a single JSON blob. Parse it out.
     marker = "const CTX = "
     start = html.index(marker) + len(marker)
@@ -147,3 +146,44 @@ def test_rotation_90_swaps_and_reflects():
     px, py = geom.to_image_px(800.0, 800.0)
     assert abs(px - 600.0) < 0.01
     assert abs(py - 800.0) < 0.01
+
+
+def test_build_html_escapes_closing_script_tag_in_payload():
+    """A text region containing '</script>' must not terminate the embedded
+    <script> tag. json.dumps doesn't escape this by default, so we do it
+    manually after serialization."""
+    doc = {
+        "metadata": {"source_pdf": "x.pdf", "pipeline_version": "0.6.0"},
+        "rooms": [
+            {
+                "room_id": "r-xss",
+                "polygon": [[0, 0], [10, 0], [10, 10], [0, 10]],
+                "centroid": [5, 5],
+                "area": 100,
+                "room_type": "unknown",
+                "room_name": "evil </script><img src=x onerror=alert(1)> name",
+                "room_number": None,
+            }
+        ],
+        "cross_references": [],
+    }
+    html = build_html(doc, b"\x89PNG\r\n\x1a\nfakepng", _geom())
+    # Literal "</script>" must not appear inside the script payload — only the
+    # real closing tag at the end of the script block is allowed.
+    script_close_count = html.count("</script>")
+    assert script_close_count == 1, (
+        f"expected exactly one literal </script> (the real tag), "
+        f"got {script_close_count}"
+    )
+
+
+def test_build_html_raises_on_missing_polygon():
+    """A room entry without a polygon should fail loudly, not render nothing."""
+    import pytest
+    doc = {
+        "metadata": {},
+        "rooms": [{"room_id": "bad", "centroid": [0, 0], "area": 10}],
+        "cross_references": [],
+    }
+    with pytest.raises(ValueError, match="bad"):
+        build_html(doc, b"\x89PNG", _geom())

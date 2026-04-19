@@ -26,15 +26,30 @@ from pathlib import Path
 import fitz
 
 
-# Must stay in sync with scripts/eval_coordinator_tasks.ALLOWED_ROOM_TYPES
-ALLOWED_ROOM_TYPES = [
-    "unit", "bathroom", "kitchen", "bedroom", "living_room", "dining_room",
-    "closet", "entry", "garage",
-    "stair", "hallway", "mechanical", "laundry", "storage", "office",
-    "unknown",
-]
 WRONG_DETECTION = "wrong_detection"
 TODO_SENTINEL = "TODO"
+
+
+def _load_allowed_room_types() -> list[str]:
+    """Load allowed_room_types from config.yaml (single source of truth).
+
+    The UI keeps a LIST (not a set) because the dropdown order should be
+    stable across runs; we preserve the config-file order.
+    """
+    import yaml  # local import — only needed by this module's setup
+    config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+    with config_path.open("r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    types = cfg.get("allowed_room_types")
+    if not isinstance(types, list) or not types:
+        raise RuntimeError(
+            f"config.yaml at {config_path} is missing or has a malformed "
+            "'allowed_room_types' list. Add a YAML list of type strings."
+        )
+    return list(types)
+
+
+ALLOWED_ROOM_TYPES = _load_allowed_room_types()
 
 # Colors used for polygon fill per correct_type. Hex strings for direct CSS.
 ROOM_TYPE_FILL = {
@@ -152,10 +167,35 @@ def _room_polygon_to_svg(polygon: list[list[float]], geom: _PageGeometry) -> str
     return " ".join(points)
 
 
+def _validated_polygon(room: dict) -> list[list[float]]:
+    """Verify the room's polygon is a list of ≥3 numeric [x, y] pairs.
+
+    Raises ValueError naming the room_id when the polygon is missing or
+    malformed. Silently substituting [] would render an invisible polygon
+    and hide a real schema-drift bug.
+    """
+    rid = room.get("room_id")
+    poly = room.get("polygon")
+    if not isinstance(poly, list) or len(poly) < 3:
+        raise ValueError(
+            f"Invalid polygon for room_id={rid!r}: expected list of >=3 "
+            f"[x, y] pairs, got {poly!r}"
+        )
+    for i, pt in enumerate(poly):
+        if not (isinstance(pt, (list, tuple)) and len(pt) == 2
+                and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in pt)):
+            raise ValueError(
+                f"Invalid polygon for room_id={rid!r}: point {i} must be a "
+                f"2-length numeric pair, got {pt!r}"
+            )
+    return poly
+
+
 def build_html(doc: dict, png_bytes: bytes, geom: _PageGeometry) -> str:
     # Pre-compute SVG-ready polygon strings keyed by room_id.
     rooms_for_js = []
     for room in (doc.get("rooms") or []):
+        poly = _validated_polygon(room)
         rooms_for_js.append({
             "room_id": room.get("room_id"),
             "centroid": room.get("centroid") or [0, 0],
@@ -163,7 +203,7 @@ def build_html(doc: dict, png_bytes: bytes, geom: _PageGeometry) -> str:
             "detected_type": room.get("room_type") or "unknown",
             "room_name": room.get("room_name"),
             "room_number": room.get("room_number"),
-            "svg_points": _room_polygon_to_svg(room.get("polygon") or [], geom),
+            "svg_points": _room_polygon_to_svg(poly, geom),
         })
 
     xref_targets = sorted({
@@ -190,10 +230,13 @@ def build_html(doc: dict, png_bytes: bytes, geom: _PageGeometry) -> str:
         "fills": ROOM_TYPE_FILL,
     }
 
-    return _HTML_TEMPLATE.replace(
-        "__CONTEXT_JSON__",
-        json.dumps(context, separators=(",", ":")),
-    )
+    # Escape any </script> sequence inside the embedded JSON so a text
+    # region that happens to contain "</script>" can't terminate the
+    # <script> tag and break (or inject into) the page. "<\\/script>" is a
+    # valid JSON string literal that JSON.parse round-trips as "</script>".
+    context_json = json.dumps(context, separators=(",", ":"))
+    context_json = context_json.replace("</", "<\\/")
+    return _HTML_TEMPLATE.replace("__CONTEXT_JSON__", context_json)
 
 
 # The HTML is one self-contained page. All runtime logic lives in the embedded
@@ -453,9 +496,11 @@ function yamlEscape(v) {
   if (v === null || v === undefined) return 'null';
   if (typeof v === 'number') return String(v);
   if (typeof v === 'boolean') return v ? 'true' : 'false';
-  const s = String(v);
-  if (/^[A-Za-z0-9_\-.]+$/.test(s)) return s;
-  return JSON.stringify(s);  // JSON strings are valid YAML strings
+  // Always quote strings. A bare-scalar optimization would cause YAML loaders
+  // to coerce numeric-shaped strings like "001" or "203" into integers on
+  // round-trip, which would then silently fail byId.has(r.room_id) lookups
+  // because the pipeline emits room_number as a string.
+  return JSON.stringify(String(v));
 }
 
 function toYaml() {
@@ -518,10 +563,15 @@ function parseYaml(text) {
     if (!m) continue;
     const indent = m[1].length;
     if (indent === 0) {
-      if (raw.startsWith('rooms:')) { section = 'rooms'; current = null; }
-      else if (raw.startsWith('missed_rooms:')) { section = 'missed_rooms'; current = null; }
-      else if (raw.startsWith('cross_references:')) { section = 'cross_references'; subsection = null; }
-      continue;
+      if (raw.startsWith('rooms:')) { section = 'rooms'; current = null; continue; }
+      if (raw.startsWith('missed_rooms:')) { section = 'missed_rooms'; current = null; continue; }
+      if (raw.startsWith('cross_references:')) { section = 'cross_references'; subsection = null; continue; }
+      // The downloader writes list items with "- " at column 0
+      // (e.g. `- room_id: abc-def`). Previously we `continue`d here and
+      // dropped every root-level list entry, so Load YAML never restored
+      // rooms/missed_rooms. Fall through to the list-item handler below
+      // only when the line is a list marker under a known section.
+      if (!raw.match(/^-\s+/)) continue;
     }
     if (section === 'cross_references' && indent >= 2) {
       if (raw.match(/^\s*detected_targets:/)) subsection = 'detected';
