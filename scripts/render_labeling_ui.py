@@ -28,19 +28,27 @@ import fitz
 
 # Must stay in sync with scripts/eval_coordinator_tasks.ALLOWED_ROOM_TYPES
 ALLOWED_ROOM_TYPES = [
-    "unit", "bathroom", "kitchen", "stair", "hallway", "mechanical",
-    "laundry", "storage", "office", "unknown",
+    "unit", "bathroom", "kitchen", "bedroom", "living_room", "dining_room",
+    "closet", "entry", "garage",
+    "stair", "hallway", "mechanical", "laundry", "storage", "office",
+    "unknown",
 ]
 WRONG_DETECTION = "wrong_detection"
 TODO_SENTINEL = "TODO"
 
 # Colors used for polygon fill per correct_type. Hex strings for direct CSS.
 ROOM_TYPE_FILL = {
-    "TODO":            "rgba(255, 193, 7, 0.30)",   # amber
+    "TODO":            "rgba(255, 193, 7, 0.30)",    # amber
     WRONG_DETECTION:   "rgba(244, 67, 54, 0.30)",    # red
     "unit":            "rgba(76, 175, 80, 0.28)",    # green
     "bathroom":        "rgba(33, 150, 243, 0.28)",   # blue
     "kitchen":         "rgba(255, 152, 0, 0.28)",    # orange
+    "bedroom":         "rgba(103, 58, 183, 0.26)",   # deep purple
+    "living_room":     "rgba(139, 195, 74, 0.28)",   # light green
+    "dining_room":     "rgba(233, 30, 99, 0.24)",    # pink
+    "closet":          "rgba(161, 136, 127, 0.28)",  # taupe
+    "entry":           "rgba(255, 235, 59, 0.28)",   # yellow
+    "garage":          "rgba(84, 110, 122, 0.30)",   # slate
     "stair":           "rgba(156, 39, 176, 0.28)",   # purple
     "hallway":         "rgba(205, 220, 57, 0.30)",   # lime
     "mechanical":      "rgba(96, 125, 139, 0.28)",   # blue-grey

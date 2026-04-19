@@ -94,6 +94,12 @@ allowed_room_types:
   - unit
   - bathroom
   - kitchen
+  - bedroom
+  - living_room
+  - dining_room
+  - closet
+  - entry
+  - garage
   - stair
   - hallway
   - mechanical
@@ -105,12 +111,21 @@ allowed_room_types:
 room_type_label_patterns:             # case-insensitive substring matches on text labels inside a room polygon
   bathroom: ["BATH", "WC", "RESTROOM", "POWDER", "TOILET", "LAVATORY"]
   kitchen: ["KITCHEN", "KITCHENETTE", "KIT"]
+  bedroom: ["BEDROOM", "BDRM", "MASTER BED", "MSTR BED"]
+  living_room: ["LIVING ROOM", "LIVING RM", "LIV ROOM", "FAMILY ROOM", "GREAT ROOM"]
+  dining_room: ["DINING ROOM", "DINING RM", "DINING"]
+  closet: ["CLOSET", "CLST", "WALK-IN"]
+  entry: ["ENTRY", "FOYER", "VESTIBULE", "LOBBY"]
+  garage: ["GARAGE"]
   stair: ["STAIR", "STAIRS", "EXIT STAIR"]
   hallway: ["HALL", "HALLWAY", "CORRIDOR"]
   mechanical: ["MECH", "MECHANICAL", "ELEC", "ELECTRICAL", "DATA", "IT", "UTILITY"]
-  unit: ["UNIT", "APARTMENT", "APT", "STUDIO", "BEDROOM", "BDRM", "BR"]
+  # "unit" captures whole-apartment labels like "2-BR" / "STUDIO"; the single-
+  # word "BR" / "BEDROOM" variants now map to the bedroom type above.
+  unit: ["UNIT", "APARTMENT", "APT", "STUDIO", "1-BR", "2-BR", "3-BR", "4-BR", "5-BR",
+         "1BR", "2BR", "3BR", "4BR", "5BR"]
   laundry: ["LAUNDRY", "WASH"]
-  storage: ["STORAGE", "STOR", "CLOSET"]
+  storage: ["STORAGE", "STOR"]
   office: ["OFFICE", "CONFERENCE", "MEETING"]
 
 # Stage 6 — Opening Detection (v0.6.0)
