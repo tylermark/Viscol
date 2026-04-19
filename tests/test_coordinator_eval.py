@@ -95,6 +95,31 @@ def test_generator_emits_every_detected_room():
     assert template["rooms"][1]["detected_type"] == "bathroom"
 
 
+def test_generator_raises_on_malformed_centroid():
+    """Malformed centroid should raise ValueError naming the room_id, not
+    silently coerce to [0, 0]."""
+    doc = {
+        "metadata": {},
+        "rooms": [
+            {"room_id": "bad-centroid", "centroid": [1.0], "area": 100.0},
+        ],
+    }
+    with pytest.raises(ValueError, match="bad-centroid"):
+        generator.build_template(doc, plan_stem="test")
+
+
+def test_generator_raises_on_negative_area():
+    """Non-numeric or negative area should raise with room context."""
+    doc = {
+        "metadata": {},
+        "rooms": [
+            {"room_id": "bad-area", "centroid": [1.0, 2.0], "area": -5.0},
+        ],
+    }
+    with pytest.raises(ValueError, match="bad-area"):
+        generator.build_template(doc, plan_stem="test")
+
+
 def test_generator_initializes_missed_and_cross_refs():
     doc = _pipeline_doc_with_rooms()
     template = generator.build_template(doc, plan_stem="test")
@@ -198,7 +223,11 @@ def test_eval_referenced_sheets_with_missed():
     doc = _pipeline_doc_with_rooms()
     labeled = {
         "plan_stem": "test",
-        "rooms": [],
+        # Full room coverage required now; types don't matter for this test.
+        "rooms": [
+            {"room_id": "r-1", "centroid": [50.0, 50.0], "correct_type": "unit"},
+            {"room_id": "r-2", "centroid": [250.0, 40.0], "correct_type": "bathroom"},
+        ],
         "missed_rooms": [],
         "cross_references": {
             "detected_targets": ["A302", "F10."],
@@ -211,6 +240,50 @@ def test_eval_referenced_sheets_with_missed():
     # recall = 1 TP / (1 TP + 1 FN) = 0.5
     assert result["referenced_sheets"]["precision"] == 0.5
     assert result["referenced_sheets"]["recall"] == 0.5
+
+
+# --------------------------------------------- malformed-label-input guards
+
+
+def test_eval_rejects_invalid_correct_type():
+    """A typo like 'bethroom' must fail fast, not silently count as anything."""
+    doc = _pipeline_doc_with_rooms()
+    labeled = _labeled_perfect(doc)
+    labeled["rooms"][0]["correct_type"] = "bethroom"
+    with pytest.raises(ValueError, match="invalid correct_type"):
+        evaluator.evaluate(doc, labeled)
+
+
+def test_eval_rejects_detected_room_missing_from_labels():
+    """If a detected room has no label row (template is stale vs. pipeline),
+    the evaluator refuses to run rather than producing silently-biased metrics."""
+    doc = _pipeline_doc_with_rooms()
+    labeled = _labeled_perfect(doc)
+    # Drop the label entry for r-2; pipeline still has r-2 detected
+    labeled["rooms"] = [r for r in labeled["rooms"] if r["room_id"] != "r-2"]
+    with pytest.raises(ValueError, match="no label entry"):
+        evaluator.evaluate(doc, labeled)
+
+
+def test_eval_tampered_detected_targets_does_not_affect_metrics():
+    """detected_targets in the labeled YAML is informational — the pipeline's
+    cross_references are the source of truth. A user who deletes entries from
+    detected_targets to inflate precision must not succeed."""
+    doc = _pipeline_doc_with_rooms()
+    # Pipeline says we detected {A302, F10.}
+    tampered = _labeled_perfect(doc)
+    # User removes F10. from detected_targets AND valid_targets to try to
+    # pretend we never detected it.
+    tampered["cross_references"]["detected_targets"] = ["A302"]
+    tampered["cross_references"]["valid_targets"] = ["A302"]
+    result = evaluator.evaluate(doc, tampered)
+    # Metrics should match the un-tampered baseline exactly.
+    baseline = evaluator.evaluate(doc, _labeled_perfect(doc))
+    assert result["referenced_sheets"] == baseline["referenced_sheets"]
+    # And specifically: F10. is still counted as an FP (precision=0.5),
+    # because pipeline is the authority on what was detected.
+    assert result["referenced_sheets"]["fp"] == 1
+    assert result["referenced_sheets"]["precision"] == 0.5
 
 
 def test_eval_rejects_template_with_todo_placeholders():

@@ -25,14 +25,54 @@ from pathlib import Path
 import yaml
 
 
+def _validated_centroid(room: dict) -> list[float]:
+    """Return a 2-length [float, float] centroid or raise with room context."""
+    rid = room.get("room_id")
+    centroid = room.get("centroid")
+    if not isinstance(centroid, (list, tuple)) or len(centroid) != 2:
+        raise ValueError(
+            f"Invalid geometry for room_id={rid!r}: centroid must be [x, y], "
+            f"got {centroid!r}"
+        )
+    try:
+        return [round(float(centroid[0]), 2), round(float(centroid[1]), 2)]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid geometry for room_id={rid!r}: centroid values must be "
+            f"numeric, got {centroid!r}"
+        ) from exc
+
+
+def _validated_area(room: dict) -> float:
+    """Return a non-negative float area or raise with room context."""
+    rid = room.get("room_id")
+    area = room.get("area")
+    if not isinstance(area, (int, float)) or isinstance(area, bool):
+        raise ValueError(
+            f"Invalid geometry for room_id={rid!r}: area must be numeric, "
+            f"got {area!r}"
+        )
+    if area < 0:
+        raise ValueError(
+            f"Invalid geometry for room_id={rid!r}: area must be >= 0, "
+            f"got {area}"
+        )
+    return round(float(area), 1)
+
+
 def build_template(doc: dict, plan_stem: str) -> dict:
-    """Pure function — no I/O. Enables clean unit-testing."""
+    """Pure function — no I/O. Enables clean unit-testing.
+
+    Validates each detected room's centroid and area up front, raising
+    ValueError (with the offending room_id) on malformed geometry rather
+    than silently substituting [0, 0] / 0.0 defaults.
+    """
     rooms_out: list[dict] = []
     for room in doc.get("rooms") or []:
         rooms_out.append({
             "room_id": room.get("room_id"),
-            "centroid": [round(float(v), 2) for v in (room.get("centroid") or [0, 0])],
-            "area": round(float(room.get("area") or 0), 1),
+            "centroid": _validated_centroid(room),
+            "area": _validated_area(room),
             "detected_type": room.get("room_type") or "unknown",
             "room_name": room.get("room_name"),
             "room_number": room.get("room_number"),

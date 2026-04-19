@@ -42,18 +42,53 @@ WRONG_DETECTION_SENTINEL = "wrong_detection"
 TODO_SENTINEL = "TODO"
 
 
-def _check_no_todos(labeled: dict) -> None:
-    """Raise if any TODO placeholders are still in the file.
+def _validate_labels(doc: dict, labeled: dict) -> None:
+    """Validate the labeling file before any metric is computed.
 
-    We don't want to silently evaluate a half-labeled template — that would
-    produce misleading precision/recall numbers.
+    Fails fast on:
+      - any `correct_type` still set to the TODO sentinel
+      - any label row missing its `room_id`
+      - any `correct_type` that isn't a recognized value
+        (ALLOWED_ROOM_TYPES ∪ {wrong_detection})
+      - full-coverage drift: a detected room the labels don't cover
+        (indicates tampering or a stale template vs. a refreshed pipeline
+        output; the user should regenerate the template and re-label).
+
+    Half-labeled or drifted files would otherwise produce misleading metrics.
     """
-    for r in labeled.get("rooms") or []:
-        if r.get("correct_type") == TODO_SENTINEL:
+    valid_types = set(ALLOWED_ROOM_TYPES) | {WRONG_DETECTION_SENTINEL}
+    labeled_rooms = labeled.get("rooms") or []
+    labeled_ids: set[str] = set()
+    for r in labeled_rooms:
+        rid = r.get("room_id")
+        if rid is None:
             raise ValueError(
-                f"room {r.get('room_id')} still has correct_type={TODO_SENTINEL!r}. "
+                f"label row missing 'room_id': {r!r}. Every labeled room "
+                "must reference the pipeline's room_id."
+            )
+        labeled_ids.add(rid)
+        ct = r.get("correct_type")
+        if ct == TODO_SENTINEL:
+            raise ValueError(
+                f"room {rid} still has correct_type={TODO_SENTINEL!r}. "
                 "Finish labeling before running the evaluation."
             )
+        if ct not in valid_types:
+            raise ValueError(
+                f"room {rid} has invalid correct_type={ct!r}. "
+                f"Must be one of {sorted(valid_types)}."
+            )
+
+    # Full-coverage drift: every pipeline room needs a matching label row.
+    detected_ids = {r.get("room_id") for r in (doc.get("rooms") or []) if r.get("room_id")}
+    missing = detected_ids - labeled_ids
+    if missing:
+        raise ValueError(
+            f"{len(missing)} detected rooms have no label entry: "
+            f"{sorted(missing)[:5]}{'...' if len(missing) > 5 else ''}. "
+            "Regenerate the template (your pipeline output likely changed "
+            "since the template was made) and merge your prior labels."
+        )
 
 
 def _room_precision_recall(doc: dict, labeled: dict) -> dict:
@@ -126,14 +161,27 @@ def _room_type_accuracy(doc: dict, labeled: dict) -> dict:
     }
 
 
-def _referenced_sheets_metrics(labeled: dict) -> dict:
-    """Set-level precision/recall on cross-reference targets."""
+def _referenced_sheets_metrics(doc: dict, labeled: dict) -> dict:
+    """Set-level precision/recall on cross-reference targets.
+
+    The `detected_targets` list in the labeled YAML is **informational** —
+    we derive the authoritative detected set from the pipeline output so a
+    tampered label file (removing a noisy target from detected_targets)
+    can't inflate precision.
+    """
     xref = labeled.get("cross_references") or {}
-    detected = set(xref.get("detected_targets") or [])
+    detected = {
+        x.get("target_sheet")
+        for x in (doc.get("cross_references") or [])
+        if x.get("target_sheet")
+    }
     valid = set(xref.get("valid_targets") or [])
     missed = set(xref.get("missed_targets") or [])
 
-    # TP: targets the user confirmed as valid (must also be in detected)
+    # TP: targets the user confirmed as valid (must also be in detected).
+    # (valid - detected) entries are labeling noise — the user kept something
+    # that isn't actually in the pipeline output. Ignore silently for metric
+    # purposes; they don't add to TP.
     tp = len(detected & valid)
     # FP: detected but not in the valid set
     fp = len(detected - valid)
@@ -154,13 +202,13 @@ def _referenced_sheets_metrics(labeled: dict) -> dict:
 
 
 def evaluate(doc: dict, labeled: dict) -> dict:
-    _check_no_todos(labeled)
+    _validate_labels(doc, labeled)
     return {
         "plan_stem": labeled.get("plan_stem"),
         "source_pdf": labeled.get("source_pdf") or doc.get("metadata", {}).get("source_pdf"),
         "room_detection": _room_precision_recall(doc, labeled),
         "room_type": _room_type_accuracy(doc, labeled),
-        "referenced_sheets": _referenced_sheets_metrics(labeled),
+        "referenced_sheets": _referenced_sheets_metrics(doc, labeled),
     }
 
 
