@@ -303,3 +303,33 @@ def test_eval_rejects_template_with_todo_placeholders():
     }
     with pytest.raises(ValueError, match="TODO"):
         evaluator.evaluate(doc, labeled)
+
+
+def test_eval_rejects_duplicate_room_id_in_labels():
+    """Labels can't contain the same room_id twice — each labeled row is a
+    per-detection judgment, and a duplicate would double-count in metrics."""
+    doc = _pipeline_doc_with_rooms()
+    labeled = _labeled_perfect(doc)
+    # Append a second row with the same room_id as r-1.
+    labeled["rooms"].append({
+        "room_id": "r-1",
+        "centroid": [50.0, 50.0],
+        "correct_type": "unit",
+    })
+    with pytest.raises(ValueError, match="duplicate 'room_id'"):
+        evaluator.evaluate(doc, labeled)
+
+
+def test_eval_rejects_labeled_room_id_not_in_pipeline():
+    """A labeled row whose room_id doesn't appear in the pipeline output
+    signals either a stale template or hand-editing. Fail fast instead of
+    silently ignoring the stray label."""
+    doc = _pipeline_doc_with_rooms()
+    labeled = _labeled_perfect(doc)
+    labeled["rooms"].append({
+        "room_id": "r-unknown",
+        "centroid": [999.0, 999.0],
+        "correct_type": "unit",
+    })
+    with pytest.raises(ValueError, match="no matching entry in the"):
+        evaluator.evaluate(doc, labeled)

@@ -32,11 +32,31 @@ from typing import Any
 import yaml
 
 
-# From schema_validator.py — duplicated here to keep this script standalone.
-ALLOWED_ROOM_TYPES = {
-    "unit", "bathroom", "kitchen", "stair", "hallway", "mechanical",
-    "laundry", "storage", "office", "unknown",
-}
+def _load_allowed_room_types() -> set[str]:
+    """Load the allowed room_type set from config.yaml.
+
+    Single source of truth — adding a new type means editing config.yaml
+    (and adding a fill color in render_labeling_ui). See
+    `allowed_room_types` in config.yaml for the canonical list.
+    """
+    config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+    try:
+        with config_path.open("r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    except OSError as exc:
+        raise RuntimeError(
+            f"Unable to read config.yaml at {config_path}: {exc}"
+        ) from exc
+    types = cfg.get("allowed_room_types")
+    if not isinstance(types, list) or not types:
+        raise RuntimeError(
+            f"config.yaml at {config_path} is missing or has a malformed "
+            "'allowed_room_types' list. Add a YAML list of type strings."
+        )
+    return set(types)
+
+
+ALLOWED_ROOM_TYPES = _load_allowed_room_types()
 # Sentinel the user can write for any room we detected that isn't really a room.
 WRONG_DETECTION_SENTINEL = "wrong_detection"
 TODO_SENTINEL = "TODO"
@@ -48,17 +68,21 @@ def _validate_labels(doc: dict, labeled: dict) -> None:
     Fails fast on:
       - any `correct_type` still set to the TODO sentinel
       - any label row missing its `room_id`
+      - duplicate `room_id` entries in the labels
       - any `correct_type` that isn't a recognized value
         (ALLOWED_ROOM_TYPES ∪ {wrong_detection})
+      - stray labels: `room_id` values present in the labels that the
+        pipeline didn't detect (template is out-of-sync or tampered)
       - full-coverage drift: a detected room the labels don't cover
-        (indicates tampering or a stale template vs. a refreshed pipeline
-        output; the user should regenerate the template and re-label).
+        (stale template vs. a refreshed pipeline output; the user should
+        regenerate and re-merge)
 
     Half-labeled or drifted files would otherwise produce misleading metrics.
     """
     valid_types = set(ALLOWED_ROOM_TYPES) | {WRONG_DETECTION_SENTINEL}
     labeled_rooms = labeled.get("rooms") or []
     labeled_ids: set[str] = set()
+    duplicates: list[str] = []
     for r in labeled_rooms:
         rid = r.get("room_id")
         if rid is None:
@@ -66,6 +90,8 @@ def _validate_labels(doc: dict, labeled: dict) -> None:
                 f"label row missing 'room_id': {r!r}. Every labeled room "
                 "must reference the pipeline's room_id."
             )
+        if rid in labeled_ids:
+            duplicates.append(rid)
         labeled_ids.add(rid)
         ct = r.get("correct_type")
         if ct == TODO_SENTINEL:
@@ -78,9 +104,28 @@ def _validate_labels(doc: dict, labeled: dict) -> None:
                 f"room {rid} has invalid correct_type={ct!r}. "
                 f"Must be one of {sorted(valid_types)}."
             )
+    if duplicates:
+        # Dedup the duplicates list for the error message (same id may
+        # appear many times in a mangled file).
+        raise ValueError(
+            f"duplicate 'room_id' entries in labels: "
+            f"{sorted(set(duplicates))}. Each room_id must appear at most once."
+        )
+
+    detected_ids = {r.get("room_id") for r in (doc.get("rooms") or []) if r.get("room_id")}
+
+    # Stray labels: something in the labels that the pipeline never emitted.
+    extras = labeled_ids - detected_ids
+    if extras:
+        raise ValueError(
+            f"{len(extras)} labeled room(s) have no matching entry in the "
+            f"pipeline output: {sorted(extras)[:5]}"
+            f"{'...' if len(extras) > 5 else ''}. Either the template is "
+            "stale (regenerate) or a labeled row was hand-edited with an "
+            "unknown id."
+        )
 
     # Full-coverage drift: every pipeline room needs a matching label row.
-    detected_ids = {r.get("room_id") for r in (doc.get("rooms") or []) if r.get("room_id")}
     missing = detected_ids - labeled_ids
     if missing:
         raise ValueError(

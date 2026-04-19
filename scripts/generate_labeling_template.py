@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -26,7 +27,12 @@ import yaml
 
 
 def _validated_centroid(room: dict) -> list[float]:
-    """Return a 2-length [float, float] centroid or raise with room context."""
+    """Return a 2-length [float, float] centroid or raise with room context.
+
+    Rejects NaN/Inf — a template that serialized one of these would survive
+    yaml.safe_dump but silently break downstream consumers (and any
+    downstream metric that multiplies or sorts by centroid).
+    """
     rid = room.get("room_id")
     centroid = room.get("centroid")
     if not isinstance(centroid, (list, tuple)) or len(centroid) != 2:
@@ -35,21 +41,33 @@ def _validated_centroid(room: dict) -> list[float]:
             f"got {centroid!r}"
         )
     try:
-        return [round(float(centroid[0]), 2), round(float(centroid[1]), 2)]
+        cx = float(centroid[0])
+        cy = float(centroid[1])
     except (TypeError, ValueError) as exc:
         raise ValueError(
             f"Invalid geometry for room_id={rid!r}: centroid values must be "
             f"numeric, got {centroid!r}"
         ) from exc
+    if not (math.isfinite(cx) and math.isfinite(cy)):
+        raise ValueError(
+            f"Invalid geometry for room_id={rid!r}: centroid values must be "
+            f"finite, got {centroid!r}"
+        )
+    return [round(cx, 2), round(cy, 2)]
 
 
 def _validated_area(room: dict) -> float:
-    """Return a non-negative float area or raise with room context."""
+    """Return a non-negative finite float area or raise with room context."""
     rid = room.get("room_id")
     area = room.get("area")
     if not isinstance(area, (int, float)) or isinstance(area, bool):
         raise ValueError(
             f"Invalid geometry for room_id={rid!r}: area must be numeric, "
+            f"got {area!r}"
+        )
+    if not math.isfinite(area):
+        raise ValueError(
+            f"Invalid geometry for room_id={rid!r}: area must be finite, "
             f"got {area!r}"
         )
     if area < 0:
