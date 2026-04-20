@@ -66,8 +66,11 @@ def _validate_labels(doc: dict, labeled: dict) -> None:
     """Validate the labeling file before any metric is computed.
 
     Fails fast on:
+      - root not a mapping (someone loaded a list or scalar YAML)
+      - `rooms` not a list
+      - any row that isn't a mapping
+      - any row missing required keys ('room_id', 'correct_type')
       - any `correct_type` still set to the TODO sentinel
-      - any label row missing its `room_id`
       - duplicate `room_id` entries in the labels
       - any `correct_type` that isn't a recognized value
         (ALLOWED_ROOM_TYPES ∪ {wrong_detection})
@@ -79,11 +82,37 @@ def _validate_labels(doc: dict, labeled: dict) -> None:
 
     Half-labeled or drifted files would otherwise produce misleading metrics.
     """
+    # Structural guards — before any .get() call, make sure we have a mapping
+    # whose "rooms" is actually iterable-as-list. A YAML that loaded to a
+    # list or string would otherwise crash deep in the metric code with a
+    # confusing AttributeError.
+    if not isinstance(labeled, dict):
+        raise ValueError(
+            f"labeled file must parse to a mapping, got {type(labeled).__name__}"
+        )
+    labeled_rooms = labeled.get("rooms")
+    if labeled_rooms is None:
+        labeled_rooms = []
+    if not isinstance(labeled_rooms, list):
+        raise ValueError(
+            f"labeled['rooms'] must be a list, got {type(labeled_rooms).__name__}"
+        )
+
     valid_types = set(ALLOWED_ROOM_TYPES) | {WRONG_DETECTION_SENTINEL}
-    labeled_rooms = labeled.get("rooms") or []
     labeled_ids: set[str] = set()
     duplicates: list[str] = []
-    for r in labeled_rooms:
+    for i, r in enumerate(labeled_rooms):
+        if not isinstance(r, dict):
+            raise ValueError(
+                f"rooms[{i}] must be a mapping, got {type(r).__name__}: {r!r}"
+            )
+        # Required keys: each row must at minimum carry both room_id and
+        # correct_type. A mapping missing either is a malformed label row.
+        missing_keys = [k for k in ("room_id", "correct_type") if k not in r]
+        if missing_keys:
+            raise ValueError(
+                f"rooms[{i}] is missing required key(s) {missing_keys}: {r!r}"
+            )
         rid = r.get("room_id")
         if rid is None:
             raise ValueError(

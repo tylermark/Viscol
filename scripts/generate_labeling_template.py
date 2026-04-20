@@ -83,12 +83,27 @@ def build_template(doc: dict, plan_stem: str) -> dict:
 
     Validates each detected room's centroid and area up front, raising
     ValueError (with the offending room_id) on malformed geometry rather
-    than silently substituting [0, 0] / 0.0 defaults.
+    than silently substituting [0, 0] / 0.0 defaults. Rooms without a
+    stable room_id are skipped with a stderr warning: emitting a row
+    keyed by None would round-trip into the evaluator and fail there
+    with a less-actionable message.
     """
     rooms_out: list[dict] = []
     for room in doc.get("rooms") or []:
+        room_id = room.get("room_id")
+        if not room_id:
+            # A None/empty room_id means the pipeline violated its schema —
+            # the labeling flow can't key anything off such a row, so skip
+            # it here and surface the issue to stderr rather than corrupt
+            # the template silently.
+            print(
+                f"WARNING: skipping room with missing room_id (centroid="
+                f"{room.get('centroid')!r}, area={room.get('area')!r})",
+                file=sys.stderr,
+            )
+            continue
         rooms_out.append({
-            "room_id": room.get("room_id"),
+            "room_id": room_id,
             "centroid": _validated_centroid(room),
             "area": _validated_area(room),
             "detected_type": room.get("room_type") or "unknown",

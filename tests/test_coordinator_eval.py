@@ -333,3 +333,56 @@ def test_eval_rejects_labeled_room_id_not_in_pipeline():
     })
     with pytest.raises(ValueError, match="no matching entry in the"):
         evaluator.evaluate(doc, labeled)
+
+
+# --------------------------------------------- structural-guard tests
+
+
+def test_eval_rejects_non_mapping_root():
+    doc = _pipeline_doc_with_rooms()
+    with pytest.raises(ValueError, match="must parse to a mapping"):
+        evaluator.evaluate(doc, ["not", "a", "dict"])
+
+
+def test_eval_rejects_non_list_rooms():
+    doc = _pipeline_doc_with_rooms()
+    labeled = _labeled_perfect(doc)
+    labeled["rooms"] = "oops-a-string"
+    with pytest.raises(ValueError, match=r"rooms'\] must be a list"):
+        evaluator.evaluate(doc, labeled)
+
+
+def test_eval_rejects_non_dict_room_row():
+    doc = _pipeline_doc_with_rooms()
+    labeled = _labeled_perfect(doc)
+    labeled["rooms"].append("rogue-scalar-row")
+    with pytest.raises(ValueError, match="must be a mapping"):
+        evaluator.evaluate(doc, labeled)
+
+
+def test_eval_rejects_room_missing_correct_type_key():
+    doc = _pipeline_doc_with_rooms()
+    labeled = _labeled_perfect(doc)
+    # Pop the required correct_type key from the first row
+    del labeled["rooms"][0]["correct_type"]
+    with pytest.raises(ValueError, match=r"missing required key\(s\) \['correct_type'\]"):
+        evaluator.evaluate(doc, labeled)
+
+
+def test_generator_skips_room_without_room_id(capsys):
+    """A pipeline room lacking a room_id is dropped from the template with a
+    stderr warning, instead of producing a None-keyed entry that would crash
+    the evaluator on round-trip."""
+    doc = {
+        "metadata": {},
+        "rooms": [
+            {"room_id": "r-ok", "centroid": [1.0, 2.0], "area": 100.0},
+            {"room_id": None, "centroid": [3.0, 4.0], "area": 200.0},
+            {"centroid": [5.0, 6.0], "area": 300.0},  # no key at all
+        ],
+    }
+    template = generator.build_template(doc, plan_stem="test")
+    assert [r["room_id"] for r in template["rooms"]] == ["r-ok"]
+    err = capsys.readouterr().err
+    # Two warnings should have been emitted (one per skipped row)
+    assert err.count("skipping room with missing room_id") == 2
