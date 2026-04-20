@@ -390,6 +390,21 @@ const state = {
   placingMissed: null,
 };
 
+// Track which rotation values we've already warned about so a stream of
+// pointermove events doesn't spam the console with duplicate messages.
+const _warnedRotations = new Set();
+function warnUnsupportedRotation() {
+  const rot = CTX.pdf_rotation;
+  if (_warnedRotations.has(rot)) return;
+  _warnedRotations.add(rot);
+  console.warn(
+    'Unsupported CTX.pdf_rotation=' + rot +
+    ' — falling back to rotation=0 behavior. Overlay positions may be wrong. ' +
+    'Context: image ' + CTX.image_width + 'x' + CTX.image_height +
+    ', mediabox ' + CTX.mediabox_width + 'x' + CTX.mediabox_height + '.'
+  );
+}
+
 // Inverse of the Python _PageGeometry.to_image_px — maps an image-pixel
 // click back to pipeline schema coords for storage in missed_rooms.
 function pixelToSchema(px, py) {
@@ -401,7 +416,7 @@ function pixelToSchema(px, py) {
     case 90:  mbx = ry; mby = CTX.mediabox_height - rx; break;
     case 180: mbx = CTX.mediabox_width - rx; mby = CTX.mediabox_height - ry; break;
     case 270: mbx = CTX.mediabox_width - ry; mby = rx; break;
-    default:  mbx = rx; mby = ry;
+    default:  warnUnsupportedRotation(); mbx = rx; mby = ry;
   }
   // Pipeline stores schema_y = rect.height - mediabox_y.
   return [mbx, CTX.rect_height - mby];
@@ -417,7 +432,7 @@ function schemaToPixel(sx, sy) {
     case 90:  rx = CTX.mediabox_height - mby; ry = mbx; break;
     case 180: rx = CTX.mediabox_width - mbx; ry = CTX.mediabox_height - mby; break;
     case 270: rx = mby; ry = CTX.mediabox_width - mbx; break;
-    default:  rx = mbx; ry = mby;
+    default:  warnUnsupportedRotation(); rx = mbx; ry = mby;
   }
   return [rx * (CTX.image_width / CTX.rect_width), ry * (CTX.image_height / CTX.rect_height)];
 }
@@ -512,18 +527,28 @@ function renderSvg() {
     svg.appendChild(placingGroup);
   }
 
-  // Convert a mouse event to (schema_x, schema_y) via the SVG's CTM.
-  function eventToSchema(e) {
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX; pt.y = e.clientY;
-    const m = svg.getScreenCTM();
-    if (!m) return null;
-    const local = pt.matrixTransform(m.inverse());
-    return pixelToSchema(local.x, local.y);
-  }
+}
 
-  // Click: add a vertex to the in-progress polygon.
-  svg.onclick = (e) => {
+// Convert a mouse event to (schema_x, schema_y) via the SVG's CTM. Module-
+// scoped so the placement-mode handlers (wired once in initEventHandlers)
+// can use it after the svg.innerHTML clear in each renderSvg() call.
+function eventToSchema(e) {
+  const svg = document.getElementById('svg');
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  const m = svg.getScreenCTM();
+  if (!m) return null;
+  const local = pt.matrixTransform(m.inverse());
+  return pixelToSchema(local.x, local.y);
+}
+
+// Attached ONCE at DOMContentLoaded. All three handlers gate on
+// state.placingMissed internally, so they're harmless when idle and
+// don't get re-created on every renderSvg() pass (which would churn
+// GC during mousemove).
+function initSvgHandlers() {
+  const svg = document.getElementById('svg');
+  svg.addEventListener('click', (e) => {
     if (!state.placingMissed) return;
     const p = eventToSchema(e);
     if (!p) return;
@@ -532,21 +557,19 @@ function renderSvg() {
       Math.round(p[1] * 100) / 100,
     ]);
     renderSvg();
-  };
-  // Double-click: close the ring (≥3 vertices) and commit.
-  svg.ondblclick = (e) => {
+  });
+  svg.addEventListener('dblclick', (e) => {
     if (!state.placingMissed) return;
     e.preventDefault();
     commitPlacement();
-  };
-  // Move: update the rubber-band preview.
-  svg.onmousemove = (e) => {
+  });
+  svg.addEventListener('mousemove', (e) => {
     if (!state.placingMissed) return;
     const p = eventToSchema(e);
     if (!p) return;
     state.placingMissed.cursor = p;
     renderSvg();
-  };
+  });
 }
 
 function roomTypes() {
@@ -881,6 +904,7 @@ function commitPlacement() {
 
 // ------------------------------------------------------------- init
 document.addEventListener('DOMContentLoaded', () => {
+  initSvgHandlers();
   renderSvg();
   renderSidebar();
   document.getElementById('download').addEventListener('click', downloadYaml);
