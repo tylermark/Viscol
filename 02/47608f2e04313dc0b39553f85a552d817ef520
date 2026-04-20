@@ -1,0 +1,25 @@
+tests/test_labeling_ui.py
+  23c064f96e8ae589 149-189
+scripts/render_labeling_ui.py
+  23c064f96e8ae589 32-53,170-193,198,206,233-239,499-503,566-574
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "0247608f2e04313dc0b39553f85a552d817ef520",
+  "prompts": {
+    "23c064f96e8ae589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089f9f16-8387-4d9c-b167-ae35b1fce6df",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 116,
+      "total_deletions": 22,
+      "accepted_lines": 1236,
+      "overriden_lines": 0
+    }
+  }
+}
