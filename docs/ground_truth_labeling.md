@@ -102,7 +102,10 @@ room_number if any).
 Rooms you see on the drawing that the pipeline didn't detect. Leave empty if
 coverage is complete on this plan; otherwise add entries with a `polygon`
 tracing the room boundary (a list of `[x, y]` vertex pairs, minimum 3
-vertices) and a `correct_type`. The UI writes polygons in flow style, e.g.:
+vertices) and a `correct_type`. Each `[x, y]` pair is in **page/schema
+coordinates** — the same document coordinate space the pipeline emits for
+detected rooms (PDF points, bottom-left origin) — *not* image pixel
+coordinates. The UI writes polygons in flow style, e.g.:
 
 ```yaml
 missed_rooms:
@@ -111,9 +114,10 @@ missed_rooms:
 ```
 
 The UI also writes a `centroid: [x, y]` alongside the polygon (averaged from
-the vertices) for reporting context; it is informational only and doesn't
-need to be exact. Older centroid-only entries without a `polygon` are still
-accepted for backward compatibility.
+the vertices, in the same page/schema coordinate space) for reporting
+context; it is informational only and doesn't need to be exact. Older
+centroid-only entries without a `polygon` are still accepted for backward
+compatibility.
 
 ### Section 3 — `cross_references`
 
