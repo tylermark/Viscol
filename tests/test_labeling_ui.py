@@ -270,3 +270,24 @@ cross_references:
     assert xref["detected_targets"] == ["A302", "F10."]
     assert xref["valid_targets"] == ["A302"]
     assert xref["missed_targets"] == ["A401"]
+
+
+def test_inverse_transform_round_trips():
+    """pixelToSchema must invert to_image_px. Forward then back should
+    give back the original schema point (within float epsilon) for every
+    supported rotation. This is the Python mirror of the JS inverse the
+    UI uses for click-to-place missed rooms."""
+    cases = [
+        # rotation, mediabox (w, h), rect (w, h), image (w, h)
+        (0,   (100, 200), (100, 200), (200, 400)),
+        (90,  (200, 100), (100, 200), (200, 400)),  # mediabox portrait rotated
+        (180, (100, 200), (100, 200), (200, 400)),
+        (270, (200, 100), (100, 200), (200, 400)),
+    ]
+    for rot, (mbw, mbh), (rw, rh), (iw, ih) in cases:
+        g = _PageGeometry(mbw, mbh, rw, rh, rot, iw, ih)
+        for sx, sy in [(10.0, 20.0), (50.0, 100.0), (0.0, 0.0)]:
+            px, py = g.to_image_px(sx, sy)
+            rx, ry = g.from_image_px(px, py)
+            assert abs(rx - sx) < 1e-6, f"rot={rot} x mismatch: {sx}→{rx}"
+            assert abs(ry - sy) < 1e-6, f"rot={rot} y mismatch: {sy}→{ry}"

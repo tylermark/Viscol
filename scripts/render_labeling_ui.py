@@ -131,6 +131,28 @@ class _PageGeometry:
         # Step 3: scale to image pixels.
         return rx * (self.iw / self.rw), ry * (self.ih / self.rh)
 
+    def from_image_px(self, px: float, py: float) -> tuple[float, float]:
+        """Inverse of to_image_px — maps an image-pixel click back into the
+        pipeline's schema coord system. Used by click-to-place missed rooms."""
+        # Undo the scale from image pixels to rect coords.
+        rx = px * (self.rw / self.iw)
+        ry = py * (self.rh / self.ih)
+
+        # Invert the rect→mediabox rotation.
+        if self.rotation == 0:
+            mbx, mby = rx, ry
+        elif self.rotation == 90:
+            mbx, mby = ry, self.mbh - rx
+        elif self.rotation == 180:
+            mbx, mby = self.mbw - rx, self.mbh - ry
+        elif self.rotation == 270:
+            mbx, mby = self.mbw - ry, rx
+        else:
+            raise ValueError(f"Unsupported /Rotate={self.rotation}; expected 0/90/180/270.")
+
+        # Re-apply the pipeline's y-flip (schema_y = rect.height - mby).
+        return mbx, self.rh - mby
+
 
 def _render_page_as_png(source_pdf: Path, page_num: int, dpi: int) -> tuple[bytes, _PageGeometry]:
     """Render page to PNG and return the geometry needed for overlay mapping."""
@@ -228,6 +250,12 @@ def build_html(doc: dict, png_bytes: bytes, geom: _PageGeometry) -> str:
         "pipeline_version": doc.get("metadata", {}).get("pipeline_version"),
         "image_width": geom.iw,
         "image_height": geom.ih,
+        # Geometry the JS needs to invert image-px clicks back to schema
+        # coords when the user click-places a missed room.
+        "rect_width": geom.rw,
+        "rect_height": geom.rh,
+        "mediabox_width": geom.mbw,
+        "mediabox_height": geom.mbh,
         "pdf_rotation": geom.rotation,
         "image_b64": b64,
         "rooms": rooms_for_js,
@@ -284,6 +312,11 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   polygon.room { stroke: #333; stroke-width: 1.4; cursor: pointer; }
   polygon.room:hover { stroke: #000; stroke-width: 2.4; }
   polygon.room.selected { stroke: #2196f3; stroke-width: 3; }
+  circle.missed { fill: rgba(244, 67, 54, 0.55); stroke: #b71c1c; stroke-width: 1.5; cursor: pointer; }
+  circle.missed:hover { stroke: #000; stroke-width: 2.5; }
+  #canvas.placing svg { cursor: crosshair; }
+  #canvas.placing polygon.room { pointer-events: none; }
+  button.placing { background: #ffebee; border-color: #c62828; color: #b71c1c; }
   #missed-list .missed-row { display: flex; gap: 6px; align-items: center; font-size: 12px; padding: 3px 0; }
   #missed-list input { width: 60px; font-size: 11px; }
   .label-box { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 11px; color: #555; }
@@ -305,8 +338,10 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="help">
       Click a room polygon to select it (scrolls the list to match). Set
       <code>correct_type</code> from the dropdown next to each row. Rooms left as
-      <code>TODO</code> will block the evaluation from running. Use
-      <b>Load&nbsp;YAML</b> to resume a previous session.
+      <code>TODO</code> will block the evaluation from running. To add a room
+      we missed, click <b>+ Click on plan to place room</b> then click the
+      drawing where the room is. Use <b>Load&nbsp;YAML</b> to resume a
+      previous session.
     </div>
     <div class="progress" id="progress"></div>
     <div class="section">
@@ -315,11 +350,8 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
     <div class="section">
       <h2>Missed rooms</h2>
-      <details>
-        <summary>Add missed room</summary>
-        <div id="missed-list"></div>
-        <button id="add-missed">+ Add row</button>
-      </details>
+      <button id="add-missed">+ Click on plan to place room</button>
+      <div id="missed-list" style="margin-top: 6px;"></div>
     </div>
     <div class="section">
       <h2>Referenced sheets</h2>
@@ -346,7 +378,40 @@ const state = {
   xref_valid: new Set(CTX.xref_targets),  // all start valid
   missed_targets: "",
   selectedRoomId: null,
+  placingMissed: false,  // true while waiting for a click-to-place
 };
+
+// Inverse of the Python _PageGeometry.to_image_px — maps an image-pixel
+// click back to pipeline schema coords for storage in missed_rooms.
+function pixelToSchema(px, py) {
+  const rx = px * (CTX.rect_width / CTX.image_width);
+  const ry = py * (CTX.rect_height / CTX.image_height);
+  let mbx, mby;
+  switch (CTX.pdf_rotation) {
+    case 0:   mbx = rx; mby = ry; break;
+    case 90:  mbx = ry; mby = CTX.mediabox_height - rx; break;
+    case 180: mbx = CTX.mediabox_width - rx; mby = CTX.mediabox_height - ry; break;
+    case 270: mbx = CTX.mediabox_width - ry; mby = rx; break;
+    default:  mbx = rx; mby = ry;
+  }
+  // Pipeline stores schema_y = rect.height - mediabox_y.
+  return [mbx, CTX.rect_height - mby];
+}
+
+// Forward: schema → image-pixel (used when rendering missed-room markers).
+function schemaToPixel(sx, sy) {
+  const mbx = sx;
+  const mby = CTX.rect_height - sy;
+  let rx, ry;
+  switch (CTX.pdf_rotation) {
+    case 0:   rx = mbx; ry = mby; break;
+    case 90:  rx = CTX.mediabox_height - mby; ry = mbx; break;
+    case 180: rx = CTX.mediabox_width - mbx; ry = CTX.mediabox_height - mby; break;
+    case 270: rx = mby; ry = CTX.mediabox_width - mbx; break;
+    default:  rx = mbx; ry = mby;
+  }
+  return [rx * (CTX.image_width / CTX.rect_width), ry * (CTX.image_height / CTX.rect_height)];
+}
 
 // ------------------------------------------------------------- rendering
 function renderSvg() {
@@ -370,10 +435,49 @@ function renderSvg() {
     poly.setAttribute('data-room-id', room.room_id);
     poly.style.fill = CTX.fills[room.correct_type] || CTX.fills[CTX.todo];
     if (state.selectedRoomId === room.room_id) poly.classList.add('selected');
-    poly.addEventListener('click', () => selectRoom(room.room_id, true));
+    poly.addEventListener('click', (e) => {
+      if (state.placingMissed) return;  // swallowed by SVG handler
+      e.stopPropagation();
+      selectRoom(room.room_id, true);
+    });
     group.appendChild(poly);
   }
   svg.appendChild(group);
+
+  // Missed-room markers. Rendered last so they sit on top of every polygon.
+  const missedGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  state.missed_rooms.forEach((m, idx) => {
+    const [cx, cy] = schemaToPixel(m.centroid[0], m.centroid[1]);
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('class', 'missed');
+    c.setAttribute('cx', cx);
+    c.setAttribute('cy', cy);
+    c.setAttribute('r', Math.max(10, CTX.image_width / 250));
+    c.setAttribute('data-missed-idx', idx);
+    missedGroup.appendChild(c);
+  });
+  svg.appendChild(missedGroup);
+
+  // SVG-level click: if in placement mode, convert the click to schema
+  // coords and add a missed_room at that point.
+  svg.onclick = (e) => {
+    if (!state.placingMissed) return;
+    // Map the viewport click through the SVG's CTM into viewBox coords.
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const m = svg.getScreenCTM();
+    if (!m) return;
+    const local = pt.matrixTransform(m.inverse());
+    const [sx, sy] = pixelToSchema(local.x, local.y);
+    state.missed_rooms.push({
+      centroid: [Math.round(sx * 100) / 100, Math.round(sy * 100) / 100],
+      correct_type: 'unknown',
+    });
+    exitPlacementMode();
+    renderSvg();
+    renderSidebar();
+  };
 }
 
 function roomTypes() {
@@ -438,14 +542,13 @@ function renderSidebar() {
   state.missed_rooms.forEach((m, idx) => {
     const row = document.createElement('div');
     row.className = 'missed-row';
-    const x = document.createElement('input');
-    x.placeholder = 'x'; x.value = m.centroid[0]; x.addEventListener('input', (e) => {
-      m.centroid[0] = parseFloat(e.target.value) || 0;
-    });
-    const y = document.createElement('input');
-    y.placeholder = 'y'; y.value = m.centroid[1]; y.addEventListener('input', (e) => {
-      m.centroid[1] = parseFloat(e.target.value) || 0;
-    });
+    // Centroid summary — informational, set by the click. No need to
+    // expose it as an editable input for routine labeling.
+    const coord = document.createElement('span');
+    coord.style.color = '#777';
+    coord.style.fontSize = '10px';
+    coord.style.minWidth = '90px';
+    coord.textContent = `#${idx + 1} at (${m.centroid[0].toFixed(0)}, ${m.centroid[1].toFixed(0)})`;
     const s = document.createElement('select');
     for (const t of CTX.allowed_types) {
       const opt = document.createElement('option');
@@ -459,9 +562,10 @@ function renderSidebar() {
     del.style.padding = '0 8px';
     del.addEventListener('click', () => {
       state.missed_rooms.splice(idx, 1);
+      renderSvg();
       renderSidebar();
     });
-    row.appendChild(x); row.appendChild(y); row.appendChild(s); row.appendChild(del);
+    row.appendChild(coord); row.appendChild(s); row.appendChild(del);
     ml.appendChild(row);
   });
 
@@ -644,14 +748,35 @@ function loadYamlFile(file) {
   reader.readAsText(file);
 }
 
+// ------------------------------------------------------------- placement mode
+
+function enterPlacementMode() {
+  state.placingMissed = true;
+  document.getElementById('canvas').classList.add('placing');
+  const btn = document.getElementById('add-missed');
+  btn.classList.add('placing');
+  btn.textContent = 'Click on the plan…  (Esc to cancel)';
+}
+
+function exitPlacementMode() {
+  state.placingMissed = false;
+  document.getElementById('canvas').classList.remove('placing');
+  const btn = document.getElementById('add-missed');
+  btn.classList.remove('placing');
+  btn.textContent = '+ Click on plan to place room';
+}
+
 // ------------------------------------------------------------- init
 document.addEventListener('DOMContentLoaded', () => {
   renderSvg();
   renderSidebar();
   document.getElementById('download').addEventListener('click', downloadYaml);
   document.getElementById('add-missed').addEventListener('click', () => {
-    state.missed_rooms.push({centroid: [0, 0], correct_type: 'unknown'});
-    renderSidebar();
+    if (state.placingMissed) exitPlacementMode();
+    else enterPlacementMode();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && state.placingMissed) exitPlacementMode();
   });
   document.getElementById('missed-targets').addEventListener('input', (e) => {
     state.missed_targets = e.target.value;
