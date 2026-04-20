@@ -386,3 +386,27 @@ def test_generator_skips_room_without_room_id(capsys):
     err = capsys.readouterr().err
     # Two warnings should have been emitted (one per skipped row)
     assert err.count("skipping room with missing room_id") == 2
+
+
+def test_eval_normalizes_none_room_type_to_unknown():
+    """A pipeline room with room_type=None must not be counted as a
+    type mismatch when the user labels it 'unknown' — None and 'unknown'
+    are the same concept."""
+    doc = _pipeline_doc_with_rooms()
+    # Force r-2's room_type to None (pipeline schema permits null)
+    for r in doc["rooms"]:
+        if r["room_id"] == "r-2":
+            r["room_type"] = None
+    labeled = _labeled_perfect(doc)
+    # User labels r-2 as 'unknown'
+    for r in labeled["rooms"]:
+        if r["room_id"] == "r-2":
+            r["correct_type"] = "unknown"
+    result = evaluator.evaluate(doc, labeled)
+    # r-1 detected=unknown vs labeled=unit → mismatch (unchanged)
+    # r-2 detected=None (→'unknown') vs labeled=unknown → match
+    assert result["room_type"]["correct"] == 1
+    assert result["room_type"]["total"] == 2
+    # The mismatches list should only contain r-1 now
+    mismatch_ids = [m["room_id"] for m in result["room_type"]["mismatches"]]
+    assert mismatch_ids == ["r-1"]
