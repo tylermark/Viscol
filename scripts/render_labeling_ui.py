@@ -550,6 +550,10 @@ function initSvgHandlers() {
   const svg = document.getElementById('svg');
   svg.addEventListener('click', (e) => {
     if (!state.placingMissed) return;
+    // A double-click fires 'click' TWICE (detail=1 then detail=2) before
+    // 'dblclick'. Without this guard, the second click would push a
+    // duplicate vertex at the close position before commitPlacement runs.
+    if (e.detail > 1) return;
     const p = eventToSchema(e);
     if (!p) return;
     state.placingMissed.vertices.push([
