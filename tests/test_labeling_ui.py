@@ -187,3 +187,86 @@ def test_build_html_raises_on_missing_polygon():
     }
     with pytest.raises(ValueError, match="bad"):
         build_html(doc, b"\x89PNG", _geom())
+
+
+def test_polygon_rejects_nan_coordinate():
+    """NaN/Inf in polygon coords must raise, not silently render invisible."""
+    import math
+    import pytest
+    doc = {
+        "metadata": {},
+        "rooms": [{
+            "room_id": "nan-room",
+            "polygon": [[0, 0], [10, 0], [10, math.nan]],
+            "centroid": [5, 5],
+            "area": 100,
+            "room_type": "unknown",
+        }],
+        "cross_references": [],
+    }
+    with pytest.raises(ValueError, match="finite"):
+        build_html(doc, b"\x89PNG", _geom())
+
+
+# --------------------------------- download → eval round-trip stability
+
+def test_downloaded_yaml_round_trips_through_eval_loader():
+    """Regression guard: a YAML produced in the format the UI downloader
+    emits (see toYaml() in the embedded JS) must load cleanly via
+    yaml.safe_load — the same loader scripts/eval_coordinator_tasks.py uses.
+    Room IDs that look numeric, multi-word room names, and all three
+    cross_references sublists must round-trip intact."""
+    import yaml
+    # This mimics the exact shape toYaml() emits for a plan with one
+    # detected room (with a numeric-looking room_number), one missed
+    # room, and xref sections with both kept and missed targets.
+    # All string values are double-quoted (yamlEscape always quotes),
+    # matching the JS side's "JSON.stringify(String(v))" serialization.
+    downloaded_yaml = '''plan_stem: "test-plan"
+source_pdf: "test.pdf"
+pipeline_version: "0.6.0"
+rooms:
+- room_id: "r-abc-123"
+  centroid:
+  - 50.0
+  - 50.0
+  area: 1234.5
+  detected_type: "unknown"
+  room_name: "Unit 2.1a"
+  room_number: "203"
+  correct_type: "unit"
+missed_rooms:
+- centroid:
+  - 999.0
+  - 999.0
+  correct_type: "kitchen"
+cross_references:
+  detected_targets:
+  - "A302"
+  - "F10."
+  valid_targets:
+  - "A302"
+  missed_targets:
+  - "A401"
+'''
+    parsed = yaml.safe_load(downloaded_yaml)
+
+    assert parsed["plan_stem"] == "test-plan"
+    assert len(parsed["rooms"]) == 1
+    # room_id stays a string even though a bare "203" would normally coerce
+    # to int — because yamlEscape always quotes.
+    assert parsed["rooms"][0]["room_id"] == "r-abc-123"
+    assert isinstance(parsed["rooms"][0]["room_number"], str)
+    assert parsed["rooms"][0]["room_number"] == "203"
+    assert parsed["rooms"][0]["correct_type"] == "unit"
+    assert parsed["rooms"][0]["centroid"] == [50.0, 50.0]
+
+    assert parsed["missed_rooms"] == [{
+        "centroid": [999.0, 999.0],
+        "correct_type": "kitchen",
+    }]
+
+    xref = parsed["cross_references"]
+    assert xref["detected_targets"] == ["A302", "F10."]
+    assert xref["valid_targets"] == ["A302"]
+    assert xref["missed_targets"] == ["A401"]

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -187,6 +188,13 @@ def _validated_polygon(room: dict) -> list[list[float]]:
             raise ValueError(
                 f"Invalid polygon for room_id={rid!r}: point {i} must be a "
                 f"2-length numeric pair, got {pt!r}"
+            )
+        if not all(math.isfinite(float(v)) for v in pt):
+            # NaN/Inf silently survive float(); they'd produce "NaN NaN"
+            # in the SVG polygon attribute and render as nothing.
+            raise ValueError(
+                f"Invalid polygon for room_id={rid!r}: point {i} must be "
+                f"finite (no NaN/Inf), got {pt!r}"
             )
     return poly
 
@@ -389,8 +397,10 @@ function renderSidebar() {
   for (const room of state.rooms) {
     const row = document.createElement('div');
     row.className = 'room-row';
-    row.classList.add(room.correct_type === CTX.todo ? 'TODO' : '');
-    if (state.selectedRoomId === room.room_id) row.classList.add('selected');
+    // classList.add throws InvalidCharacterError on empty-string tokens, so
+    // toggle is the safe way to conditionally apply a class.
+    row.classList.toggle('TODO', room.correct_type === CTX.todo);
+    row.classList.toggle('selected', state.selectedRoomId === room.room_id);
     const chip = document.createElement('span');
     chip.className = 'chip';
     chip.style.background = CTX.fills[room.correct_type] || CTX.fills[CTX.todo];
