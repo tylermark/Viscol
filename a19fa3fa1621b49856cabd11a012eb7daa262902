@@ -1,0 +1,27 @@
+scripts/generate_labeling_template.py
+  23c064f96e8ae589 86-89,93-104,106
+scripts/eval_coordinator_tasks.py
+  23c064f96e8ae589 69-72,85-100,104-115
+tests/test_coordinator_eval.py
+  23c064f96e8ae589 336-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.0",
+  "base_commit_sha": "a19fa3fa1621b49856cabd11a012eb7daa262902",
+  "prompts": {
+    "23c064f96e8ae589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089f9f16-8387-4d9c-b167-ae35b1fce6df",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 446,
+      "total_deletions": 5,
+      "accepted_lines": 1273,
+      "overriden_lines": 0
+    }
+  }
+}
