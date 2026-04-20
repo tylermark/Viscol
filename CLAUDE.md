@@ -131,7 +131,7 @@ The canonical output is a **structured graph per drawing**, FM-training-ready. E
       "text_labels": ["text_region_id", ...],
       "room_name": "Studio Unit 1.1a" | null,
       "room_number": "203" | null,
-      "room_type": "unit | bathroom | kitchen | stair | hallway | mechanical | unknown",
+      "room_type": "unit | bathroom | kitchen | bedroom | living_room | dining_room | closet | entry | garage | stair | hallway | mechanical | laundry | storage | office | unknown",
       "requires_cross_document_validation": false
     }
   ],

@@ -22,8 +22,10 @@ ALLOWED_FUNCTIONAL_ROLES = {
 CROSS_DOC_REQUIRED_ROLES = {"bearing_wall", "wet_wall"}
 ALLOWED_JUNCTION_TYPES = {"corner", "t-junction", "x-junction", "endpoint"}
 ALLOWED_ROOM_TYPES = {
-    "unit", "bathroom", "kitchen", "stair", "hallway", "mechanical",
-    "laundry", "storage", "office", "unknown",
+    "unit", "bathroom", "kitchen", "bedroom", "living_room", "dining_room",
+    "closet", "entry", "garage",
+    "stair", "hallway", "mechanical", "laundry", "storage", "office",
+    "unknown",
 }
 ALLOWED_OPENING_TYPES = {"door", "window", "unknown"}
 ALLOWED_TEXT_CLASSIFICATIONS = {

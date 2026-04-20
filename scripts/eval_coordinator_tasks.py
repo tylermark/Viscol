@@ -203,20 +203,29 @@ def _room_precision_recall(doc: dict, labeled: dict) -> dict:
 
 
 def _room_type_accuracy(doc: dict, labeled: dict) -> dict:
-    """Among TRUE-positive rooms, what fraction have the correct type?"""
+    """Among TRUE-positive rooms, what fraction have the correct type?
+
+    Normalize a pipeline `room_type` of None or missing to the "unknown"
+    string so comparisons against a labeled "unknown" match. Previously
+    a room with `room_type: None` compared as None == "unknown" → False
+    and was wrongly counted as a mismatch.
+    """
     labeled_by_id = {
         r["room_id"]: r["correct_type"]
         for r in (labeled.get("rooms") or [])
         if r.get("room_id") is not None
         and r["correct_type"] not in (WRONG_DETECTION_SENTINEL, TODO_SENTINEL)
     }
-    detected_type_by_id = {r["room_id"]: r.get("room_type") for r in (doc.get("rooms") or [])}
+    detected_type_by_id = {
+        r["room_id"]: (r.get("room_type") or "unknown")
+        for r in (doc.get("rooms") or [])
+    }
 
     correct = 0
     total = 0
     mismatches: list[dict] = []
     for rid, correct_type in labeled_by_id.items():
-        detected = detected_type_by_id.get(rid, "unknown")
+        detected = detected_type_by_id.get(rid) or "unknown"
         total += 1
         if detected == correct_type:
             correct += 1
