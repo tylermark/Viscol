@@ -532,6 +532,16 @@ function renderSvg() {
 
 }
 
+// True if the event target is a form control or contentEditable element —
+// i.e. the user is typing, and global keyboard shortcuts should yield.
+function isEditableElement(el) {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
 // Convert a mouse event to (schema_x, schema_y) via the SVG's CTM. Module-
 // scoped so the placement-mode handlers (wired once in initEventHandlers)
 // can use it after the svg.innerHTML clear in each renderSvg() call.
@@ -544,6 +554,11 @@ function eventToSchema(e) {
   const local = pt.matrixTransform(m.inverse());
   return pixelToSchema(local.x, local.y);
 }
+
+// RAF id for mousemove throttling. A full renderSvg() rebuilds the whole
+// overlay, so coalescing per-frame keeps placement mode smooth even when
+// the browser fires mousemove events faster than the display refresh.
+let mousemoveRafId = null;
 
 // Attached ONCE at DOMContentLoaded. All three handlers gate on
 // state.placingMissed internally, so they're harmless when idle and
@@ -574,8 +589,15 @@ function initSvgHandlers() {
     if (!state.placingMissed) return;
     const p = eventToSchema(e);
     if (!p) return;
+    // Always update the stored cursor so the queued frame reads the latest
+    // position, but only schedule one RAF at a time — later mousemoves in
+    // the same frame just overwrite state.placingMissed.cursor.
     state.placingMissed.cursor = p;
-    renderSvg();
+    if (mousemoveRafId !== null) return;
+    mousemoveRafId = requestAnimationFrame(() => {
+      mousemoveRafId = null;
+      if (state.placingMissed) renderSvg();
+    });
   });
 }
 
@@ -921,6 +943,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.addEventListener('keydown', (e) => {
     if (!state.placingMissed) return;
+    // Don't hijack keys while the user is typing in a form control (e.g.
+    // missed-targets textarea). Otherwise Enter/Backspace/Escape would
+    // commit/undo/cancel placement instead of editing the text.
+    if (isEditableElement(e.target)) return;
     if (e.key === 'Escape') exitPlacementMode();
     else if (e.key === 'Enter') { e.preventDefault(); commitPlacement(); }
     else if (e.key === 'Backspace' && state.placingMissed.vertices.length > 0) {
