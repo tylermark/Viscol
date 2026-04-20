@@ -330,6 +330,7 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   details summary { cursor: pointer; font-weight: bold; font-size: 12px; }
   details[open] summary { margin-bottom: 6px; }
   .help { font-size: 11px; color: #666; background: #fffbe6; border: 1px solid #f4d793; padding: 6px 8px; border-radius: 4px; margin-bottom: 10px; }
+  kbd { font-family: inherit; font-size: 10px; background: #f0f0f0; border: 1px solid #bbb; border-radius: 3px; padding: 1px 4px; }
 </style>
 </head>
 <body>
@@ -345,10 +346,9 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div class="help">
       Click a room polygon to select it (scrolls the list to match). Set
       <code>correct_type</code> from the dropdown next to each row. Rooms left as
-      <code>TODO</code> will block the evaluation from running. To add a room
-      we missed, click <b>+ Click on plan to place room</b> then click the
-      drawing where the room is. Use <b>Load&nbsp;YAML</b> to resume a
-      previous session.
+      <code>TODO</code> will block the evaluation from running. Use
+      <b>Load&nbsp;YAML</b> to resume a previous session. To add rooms we missed,
+      see the <b>Missed rooms</b> section below.
     </div>
     <div class="progress" id="progress"></div>
     <div class="section">
@@ -357,6 +357,9 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
     </div>
     <div class="section">
       <h2>Missed rooms</h2>
+      <div style="font-size: 11px; color: #555; margin-bottom: 6px;">
+        Click vertices · double-click or <kbd>Enter</kbd> to finish · <kbd>Backspace</kbd> to undo · <kbd>Esc</kbd> to cancel.
+      </div>
       <button id="add-missed">+ Click on plan to place room</button>
       <div id="missed-list" style="margin-top: 6px;"></div>
     </div>
