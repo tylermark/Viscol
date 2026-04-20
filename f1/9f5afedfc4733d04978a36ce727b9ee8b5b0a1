@@ -1,0 +1,38 @@
+scripts/render_labeling_ui.py
+  d4812ce0b142a20a 535-544,558-562,592-594,596-600,946-949
+docs/ground_truth_labeling.md
+  d4812ce0b142a20a 103-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "f19f5afedfc4733d04978a36ce727b9ee8b5b0a1",
+  "prompts": {
+    "23c064f96e8ae589": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "089f9f16-8387-4d9c-b167-ae35b1fce6df",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 361,
+      "overriden_lines": 0
+    },
+    "d4812ce0b142a20a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "28fbab58-b99f-4c75-8e7a-4794df83dbd3",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 43,
+      "total_deletions": 5,
+      "accepted_lines": 1167,
+      "overriden_lines": 0
+    }
+  }
+}
