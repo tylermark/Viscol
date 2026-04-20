@@ -51,6 +51,7 @@ REQUIRED_KEYS = {
     "room_gap_close_enabled",
     "room_gap_close_max_distance",
     "room_gap_close_max_angle_drift_deg",
+    "allowed_room_types",
     "room_type_label_patterns",
     "door_arc_span_min_deg",
     "door_arc_span_max_deg",

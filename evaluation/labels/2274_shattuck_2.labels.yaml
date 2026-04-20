@@ -1,0 +1,437 @@
+plan_stem: 2274 Shattuck Regal Drawings & Plans -- 11-4-23 copy [2]
+source_pdf: 2274 Shattuck Regal Drawings & Plans -- 11-4-23 copy [2].pdf
+pipeline_version: 0.6.0
+_instructions: Fill in `correct_type` for each room (use one of ALLOWED_ROOM_TYPES or 'wrong_detection'). Add any rooms we
+  missed under `missed_rooms`. For cross_references, keep only the target IDs that are real sheet references in `valid_targets`;
+  list any you see on the drawing that we missed under `missed_targets`. Run scripts/eval_coordinator_tasks.py when done.
+rooms:
+- room_id: 8503373c-84a6-49de-b50e-310b4c90e289
+  centroid:
+  - 950.08
+  - 1074.29
+  area: 16633.8
+  detected_type: unit
+  room_name: 2-BR
+  room_number: null
+  correct_type: TODO
+- room_id: 9fe2d518-fdd2-4132-a9d6-dd01d9465c5d
+  centroid:
+  - 567.15
+  - 1137.83
+  area: 3854.6
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 8431cf53-1cce-476f-b963-875b34afc882
+  centroid:
+  - 1026.99
+  - 653.83
+  area: 3845.3
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: e5d71071-14f8-4a59-8235-083825fd127d
+  centroid:
+  - 330.16
+  - 1025.76
+  area: 3836.9
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: a74d65a9-cdaa-45b6-bd74-61e0c3ddde73
+  centroid:
+  - 1316.24
+  - 760.66
+  area: 3836.5
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 7338880b-3004-481c-8cb4-262db874c9d3
+  centroid:
+  - 402.74
+  - 663.47
+  area: 3835.4
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: abe92713-13f1-44c5-8052-aa26dc5f0e55
+  centroid:
+  - 1324.76
+  - 1070.55
+  area: 3835.1
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 8fe606f1-62d1-4b64-b043-a4eefdfd1bc7
+  centroid:
+  - 453.77
+  - 1150.69
+  area: 3833.8
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 57513b95-3e10-42ad-b8b2-5237b9224972
+  centroid:
+  - 1324.65
+  - 1007.21
+  area: 3833.4
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 5bcb6497-7adc-4415-b7f8-96638d15b27c
+  centroid:
+  - 1201.11
+  - 1132.14
+  area: 3833.2
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: d1071117-7f87-4bbf-b186-439c862f739f
+  centroid:
+  - 864.79
+  - 1137.98
+  area: 3831.9
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 3313566e-5b96-4687-84c9-399ccd9b1771
+  centroid:
+  - 746.15
+  - 1137.98
+  area: 3831.8
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 42cf2eaa-bf57-46a0-a2ad-8d0cfe6b8beb
+  centroid:
+  - 669.11
+  - 653.79
+  area: 3826.6
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 13c0a6e1-d366-44c6-b94a-c89f842a86eb
+  centroid:
+  - 341.12
+  - 787.04
+  area: 3825.7
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 57407383-96a6-4576-8ffd-16c2b495efc0
+  centroid:
+  - 907.64
+  - 653.83
+  area: 3821.8
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 9c5712be-4965-45c0-99bd-a04acb81acf5
+  centroid:
+  - 465.92
+  - 663.58
+  area: 3819.2
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: db7a6589-c677-4a09-8aca-4dbcf3361561
+  centroid:
+  - 685.87
+  - 1137.85
+  area: 3817.3
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 8191c673-c35a-494e-9233-7d7b4acb3711
+  centroid:
+  - 1315.89
+  - 820.12
+  area: 3808.1
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 2d97389d-d728-471e-a4ce-dac2e8c07dee
+  centroid:
+  - 550.12
+  - 653.97
+  area: 3785.3
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 0973847f-f253-4524-8f28-82b4cb81deab
+  centroid:
+  - 848.22
+  - 653.95
+  area: 3769.6
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: a2c36aaf-1ae9-4c81-b563-92b956cb7ffb
+  centroid:
+  - 728.47
+  - 653.92
+  area: 3768.0
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 446917e8-d3d1-4a7a-a7d9-8563bdfa823c
+  centroid:
+  - 1254.91
+  - 632.25
+  area: 3763.1
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: a50cf95e-02b4-442e-b31e-85da9953ea06
+  centroid:
+  - 508.35
+  - 1150.4
+  area: 3743.0
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 00e9c900-5469-4b7c-af20-e00322aa760c
+  centroid:
+  - 1194.39
+  - 632.4
+  area: 3740.6
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 0b2b280d-9c3d-47d4-ac6b-1f64624b6776
+  centroid:
+  - 341.46
+  - 841.34
+  area: 3728.3
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 4c7bbe9b-d500-4ec6-baf1-4ade90938b3a
+  centroid:
+  - 1146.77
+  - 1131.77
+  area: 3714.8
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: c67d8d6e-086a-4790-92c2-2e7d7643c635
+  centroid:
+  - 987.87
+  - 1137.41
+  area: 3654.3
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: e2816d53-a6b5-42d0-bad1-996654119372
+  centroid:
+  - 334.47
+  - 899.22
+  area: 3648.2
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: ab3da9ac-0a2f-41da-86d7-32c7e1e51af5
+  centroid:
+  - 1320.74
+  - 944.78
+  area: 3642.7
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 79a803f7-bfd2-495c-af3d-f28c35162842
+  centroid:
+  - 465.79
+  - 896.77
+  area: 2872.3
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: c8c27d4b-5109-4fef-b0c4-ae1eda507c26
+  centroid:
+  - 1189.44
+  - 946.61
+  area: 2818.1
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: b9a5d518-04bf-47ee-a478-ff75e362dd16
+  centroid:
+  - 568.68
+  - 873.71
+  area: 2146.0
+  detected_type: laundry
+  room_name: LAUNDRY
+  room_number: null
+  correct_type: TODO
+- room_id: 3c353881-569f-4273-ab48-1b2eaf6f142e
+  centroid:
+  - 985.77
+  - 972.37
+  area: 2129.1
+  detected_type: unknown
+  room_name: SHOWER
+  room_number: null
+  correct_type: TODO
+- room_id: d54f945f-2922-4b4c-9989-16af36e0d5a2
+  centroid:
+  - 575.25
+  - 905.98
+  area: 1966.3
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: c8660089-f5d6-4100-bce3-1ac987ed83a4
+  centroid:
+  - 667.0
+  - 873.49
+  area: 1773.0
+  detected_type: unknown
+  room_name: EL.
+  room_number: null
+  correct_type: TODO
+- room_id: 53ad761d-a5d1-441a-9341-177819eece4e
+  centroid:
+  - 620.3
+  - 873.84
+  area: 1681.3
+  detected_type: unknown
+  room_name: IDF
+  room_number: null
+  correct_type: TODO
+- room_id: 389db43f-e569-4611-aa4f-8086f5665a7a
+  centroid:
+  - 565.89
+  - 1025.42
+  area: 1368.6
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 8121cddd-730c-4d5d-867b-8a3fa6e6437c
+  centroid:
+  - 1027.02
+  - 766.85
+  area: 1331.5
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 1b147539-46db-4a46-855e-6821c09be8bb
+  centroid:
+  - 669.04
+  - 766.93
+  area: 1311.9
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 101c872f-e6da-4653-a08f-b6a1e5be84f9
+  centroid:
+  - 728.15
+  - 766.65
+  area: 1292.1
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: f0d5c28d-5d45-44de-a66b-6745d62505ba
+  centroid:
+  - 864.93
+  - 1025.68
+  area: 1289.8
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: c42e757b-b140-4701-b941-eda8bed260d0
+  centroid:
+  - 1183.36
+  - 987.14
+  area: 1198.7
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 18c33077-acb7-488b-8dc3-0d097fa4605f
+  centroid:
+  - 486.1
+  - 804.86
+  area: 1198.7
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 5e65676a-39fe-4280-857f-a3b897f6ab99
+  centroid:
+  - 471.52
+  - 1005.7
+  area: 1195.6
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: ef9604b0-90c2-47a9-ba40-29913318b7da
+  centroid:
+  - 1099.95
+  - 892.28
+  area: 1016.1
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 94074f3e-b7ce-4521-9719-a13def6fa0a9
+  centroid:
+  - 1046.92
+  - 797.78
+  area: 589.9
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+- room_id: 04f5c6d1-2b0e-4b18-9521-b29436e1ccef
+  centroid:
+  - 689.18
+  - 797.63
+  area: 586.8
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+missed_rooms: []
+cross_references:
+  detected_targets:
+  - A2.2
+  valid_targets:
+  - A2.2
+  missed_targets: []

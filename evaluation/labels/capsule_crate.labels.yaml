@@ -1,0 +1,62 @@
+plan_stem: (B) Capsule + Crate - SoLa Fernando Scope Review - Updated for Approval
+source_pdf: (B) Capsule + Crate - SoLa Fernando Scope Review - Updated for Approval.pdf
+pipeline_version: 0.6.0
+_instructions: Fill in `correct_type` for each room (use one of ALLOWED_ROOM_TYPES or 'wrong_detection'). Add any rooms we
+  missed under `missed_rooms`. For cross_references, keep only the target IDs that are real sheet references in `valid_targets`;
+  list any you see on the drawing that we missed under `missed_targets`. Run scripts/eval_coordinator_tasks.py when done.
+rooms: []
+missed_rooms: []
+cross_references:
+  detected_targets:
+  - A2.00
+  - A3.00
+  - A3.01
+  - A3.02
+  - A3.03
+  - A4.00
+  - A4.01
+  - A4.02
+  - A4.03
+  - A4.04
+  - A4.21
+  - A6.00
+  - A6.01
+  - A6.02
+  - A6.03
+  - A7.30
+  - A7.51
+  - A7.52
+  - A7.53
+  - A7.54
+  - A7.60
+  - A9.01
+  - L01
+  - W1
+  - W2
+  valid_targets:
+  - A2.00
+  - A3.00
+  - A3.01
+  - A3.02
+  - A3.03
+  - A4.00
+  - A4.01
+  - A4.02
+  - A4.03
+  - A4.04
+  - A4.21
+  - A6.00
+  - A6.01
+  - A6.02
+  - A6.03
+  - A7.30
+  - A7.51
+  - A7.52
+  - A7.53
+  - A7.54
+  - A7.60
+  - A9.01
+  - L01
+  - W1
+  - W2
+  missed_targets: []

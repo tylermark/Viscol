@@ -1,0 +1,171 @@
+plan_stem: 2100 West Jefferson Street Extract[5]
+source_pdf: 2100 West Jefferson Street Extract[5].pdf
+pipeline_version: 0.6.0
+_instructions: Fill in `correct_type` for each room (use one of ALLOWED_ROOM_TYPES or 'wrong_detection'). Add any rooms we
+  missed under `missed_rooms`. For cross_references, keep only the target IDs that are real sheet references in `valid_targets`;
+  list any you see on the drawing that we missed under `missed_targets`. Run scripts/eval_coordinator_tasks.py when done.
+rooms:
+- room_id: 4f003d50-f2b4-4cc8-b5a9-b54c650043ed
+  centroid:
+  - 491.72
+  - -237.38
+  area: 261047.2
+  detected_type: unknown
+  room_name: F10.
+  room_number: null
+  correct_type: TODO
+- room_id: d999aced-aa6a-4367-9599-ba0dae361154
+  centroid:
+  - 1481.68
+  - -237.34
+  area: 260790.9
+  detected_type: unknown
+  room_name: F10.
+  room_number: null
+  correct_type: TODO
+- room_id: 136b43df-8598-4d31-92f2-beb62d682211
+  centroid:
+  - 494.99
+  - 856.29
+  area: 254156.6
+  detected_type: unknown
+  room_name: F10.
+  room_number: null
+  correct_type: TODO
+- room_id: 9e4de431-8bd5-4273-af09-f4f67917a989
+  centroid:
+  - 1484.72
+  - 856.29
+  area: 254129.4
+  detected_type: unknown
+  room_name: F10.
+  room_number: null
+  correct_type: TODO
+- room_id: bf786eeb-12e2-4de0-9f2c-72b8e7b7cae2
+  centroid:
+  - 491.91
+  - 1402.4
+  area: 131817.9
+  detected_type: unknown
+  room_name: F26.
+  room_number: null
+  correct_type: TODO
+- room_id: 0e298863-6b10-4d9e-8492-98492362d3ec
+  centroid:
+  - 1481.95
+  - 1402.22
+  area: 131509.2
+  detected_type: unknown
+  room_name: F26.
+  room_number: null
+  correct_type: TODO
+- room_id: 69b2ae43-6b69-4c3e-91b4-da91bc8999f7
+  centroid:
+  - 494.35
+  - 528.16
+  area: 128394.8
+  detected_type: unknown
+  room_name: F09.
+  room_number: null
+  correct_type: TODO
+- room_id: 0d422c38-6ae2-4f77-acb2-4d5ee8472bdf
+  centroid:
+  - 1484.07
+  - 528.16
+  area: 128378.4
+  detected_type: unknown
+  room_name: F09.
+  room_number: null
+  correct_type: TODO
+- room_id: 9da24731-907e-4a3c-ad08-804f5869eca1
+  centroid:
+  - 495.41
+  - 309.45
+  area: 127239.8
+  detected_type: unknown
+  room_name: F10.
+  room_number: null
+  correct_type: TODO
+- room_id: 8ac57f06-d6a1-498c-a57c-1b2cf957c437
+  centroid:
+  - 1485.14
+  - 309.45
+  area: 127223.9
+  detected_type: unknown
+  room_name: F10.
+  room_number: null
+  correct_type: TODO
+- room_id: e27c2fc7-6109-41c9-9de5-aaced9f92fee
+  centroid:
+  - 495.58
+  - 1181.62
+  area: 126613.4
+  detected_type: unknown
+  room_name: F09.
+  room_number: null
+  correct_type: TODO
+- room_id: 226baa9a-2370-4fc9-8b5d-861d632606b1
+  centroid:
+  - 1485.31
+  - 1181.62
+  area: 126600.5
+  detected_type: unknown
+  room_name: F09.
+  room_number: null
+  correct_type: TODO
+- room_id: 529c5040-cec8-410a-ac65-9223fc334db8
+  centroid:
+  - 495.16
+  - 92.63
+  area: 126532.1
+  detected_type: unknown
+  room_name: F21.
+  room_number: null
+  correct_type: TODO
+- room_id: 14cdc299-c9fe-48ba-908c-0945012da8b3
+  centroid:
+  - 1484.88
+  - 92.63
+  area: 126516.0
+  detected_type: unknown
+  room_name: F21.
+  room_number: null
+  correct_type: TODO
+- room_id: bf63302b-5221-490a-95e5-a83f592fbb05
+  centroid:
+  - 885.56
+  - 1377.65
+  area: 50473.2
+  detected_type: unknown
+  room_name: null
+  room_number: null
+  correct_type: TODO
+missed_rooms: []
+cross_references:
+  detected_targets:
+  - A120
+  - F06.
+  - F08.
+  - F09.
+  - F10.
+  - F11.
+  - F21.
+  - F24.
+  - F26.
+  - G030
+  - G040
+  - G110
+  valid_targets:
+  - A120
+  - F06.
+  - F08.
+  - F09.
+  - F10.
+  - F11.
+  - F21.
+  - F24.
+  - F26.
+  - G030
+  - G040
+  - G110
+  missed_targets: []

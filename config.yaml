@@ -84,6 +84,24 @@ room_min_short_dimension: 15.0        # pt — reject polygons with short-side s
 room_gap_close_enabled: true          # when true, virtually bridge near-colinear endpoint pairs before polygonize
 room_gap_close_max_distance: 60.0     # pt — max endpoint-pair distance to virtually bridge (≈ typical door width)
 room_gap_close_max_angle_drift_deg: 20.0  # degrees — max angle drift between the incident walls of a paired endpoint; higher = more permissive
+# Single source of truth for the set of values `room.room_type` and
+# `correct_type` (in labeling YAML) are allowed to take. Consumers:
+#   - schema_validator.py (via duplicated constant — it's standalone-friendly)
+#   - scripts/eval_coordinator_tasks.py (loaded at import time)
+#   - scripts/render_labeling_ui.py (loaded at import time)
+# Adding a new type: append here AND add a fill color in render_labeling_ui.py.
+allowed_room_types:
+  - unit
+  - bathroom
+  - kitchen
+  - stair
+  - hallway
+  - mechanical
+  - laundry
+  - storage
+  - office
+  - unknown
+
 room_type_label_patterns:             # case-insensitive substring matches on text labels inside a room polygon
   bathroom: ["BATH", "WC", "RESTROOM", "POWDER", "TOILET", "LAVATORY"]
   kitchen: ["KITCHEN", "KITCHENETTE", "KIT"]
