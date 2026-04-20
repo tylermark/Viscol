@@ -1,0 +1,23 @@
+docs/ground_truth_labeling.md
+  d4812ce0b142a20a 105-108,117-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.2",
+  "base_commit_sha": "765538eaad59ce1a5860befbc164e441b444b406",
+  "prompts": {
+    "d4812ce0b142a20a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "28fbab58-b99f-4c75-8e7a-4794df83dbd3",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "tylermark",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 4,
+      "accepted_lines": 169,
+      "overriden_lines": 0
+    }
+  }
+}
