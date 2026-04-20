@@ -312,8 +312,15 @@ _HTML_TEMPLATE = r"""<!DOCTYPE html>
   polygon.room { stroke: #333; stroke-width: 1.4; cursor: pointer; }
   polygon.room:hover { stroke: #000; stroke-width: 2.4; }
   polygon.room.selected { stroke: #2196f3; stroke-width: 3; }
+  polygon.missed { fill: rgba(244, 67, 54, 0.28); stroke: #b71c1c; stroke-width: 2; cursor: pointer; }
+  polygon.missed:hover { stroke: #000; stroke-width: 3; }
   circle.missed { fill: rgba(244, 67, 54, 0.55); stroke: #b71c1c; stroke-width: 1.5; cursor: pointer; }
   circle.missed:hover { stroke: #000; stroke-width: 2.5; }
+  /* In-progress polygon drawing */
+  circle.placing-vertex { fill: #b71c1c; stroke: white; stroke-width: 1.5; }
+  polyline.placing-edge, line.placing-rubberband {
+    fill: none; stroke: #b71c1c; stroke-width: 2; stroke-dasharray: 6 4;
+  }
   #canvas.placing svg { cursor: crosshair; }
   #canvas.placing polygon.room { pointer-events: none; }
   button.placing { background: #ffebee; border-color: #c62828; color: #b71c1c; }
@@ -378,7 +385,9 @@ const state = {
   xref_valid: new Set(CTX.xref_targets),  // all start valid
   missed_targets: "",
   selectedRoomId: null,
-  placingMissed: false,  // true while waiting for a click-to-place
+  // While placing a missed room, this holds { vertices: [[sx, sy], ...],
+  // cursor: [sx, sy] | null }. Null when not in placement mode.
+  placingMissed: null,
 };
 
 // Inverse of the Python _PageGeometry.to_image_px — maps an image-pixel
@@ -444,39 +453,99 @@ function renderSvg() {
   }
   svg.appendChild(group);
 
-  // Missed-room markers. Rendered last so they sit on top of every polygon.
+  // Missed-room markers. Draw as polygons when we have vertex data,
+  // otherwise fall back to a point marker (back-compat with the older
+  // click-to-drop-a-point format).
   const missedGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   state.missed_rooms.forEach((m, idx) => {
-    const [cx, cy] = schemaToPixel(m.centroid[0], m.centroid[1]);
-    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    c.setAttribute('class', 'missed');
-    c.setAttribute('cx', cx);
-    c.setAttribute('cy', cy);
-    c.setAttribute('r', Math.max(10, CTX.image_width / 250));
-    c.setAttribute('data-missed-idx', idx);
-    missedGroup.appendChild(c);
+    if (m.polygon && m.polygon.length >= 3) {
+      const pts = m.polygon.map(p => schemaToPixel(p[0], p[1])).map(xy => `${xy[0]},${xy[1]}`).join(' ');
+      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      poly.setAttribute('class', 'missed');
+      poly.setAttribute('points', pts);
+      poly.setAttribute('data-missed-idx', idx);
+      missedGroup.appendChild(poly);
+    } else {
+      const [cx, cy] = schemaToPixel(m.centroid[0], m.centroid[1]);
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('class', 'missed');
+      c.setAttribute('cx', cx);
+      c.setAttribute('cy', cy);
+      c.setAttribute('r', Math.max(10, CTX.image_width / 250));
+      c.setAttribute('data-missed-idx', idx);
+      missedGroup.appendChild(c);
+    }
   });
   svg.appendChild(missedGroup);
 
-  // SVG-level click: if in placement mode, convert the click to schema
-  // coords and add a missed_room at that point.
+  // In-progress polygon overlay (while in placement mode).
+  if (state.placingMissed) {
+    const placingGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const verts = state.placingMissed.vertices;
+    if (verts.length > 1) {
+      const pts = verts.map(p => schemaToPixel(p[0], p[1])).map(xy => `${xy[0]},${xy[1]}`).join(' ');
+      const pl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      pl.setAttribute('class', 'placing-edge');
+      pl.setAttribute('points', pts);
+      placingGroup.appendChild(pl);
+    }
+    // Rubber-band line from the last placed vertex to the cursor.
+    if (verts.length >= 1 && state.placingMissed.cursor) {
+      const last = schemaToPixel(verts[verts.length - 1][0], verts[verts.length - 1][1]);
+      const cur = schemaToPixel(state.placingMissed.cursor[0], state.placingMissed.cursor[1]);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'placing-rubberband');
+      line.setAttribute('x1', last[0]); line.setAttribute('y1', last[1]);
+      line.setAttribute('x2', cur[0]);  line.setAttribute('y2', cur[1]);
+      placingGroup.appendChild(line);
+    }
+    // Dot at each placed vertex, bigger on the first so users know where
+    // to click to close the ring.
+    verts.forEach((v, i) => {
+      const [vx, vy] = schemaToPixel(v[0], v[1]);
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('class', 'placing-vertex');
+      dot.setAttribute('cx', vx); dot.setAttribute('cy', vy);
+      dot.setAttribute('r', i === 0 ? 7 : 5);
+      placingGroup.appendChild(dot);
+    });
+    svg.appendChild(placingGroup);
+  }
+
+  // Convert a mouse event to (schema_x, schema_y) via the SVG's CTM.
+  function eventToSchema(e) {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    const m = svg.getScreenCTM();
+    if (!m) return null;
+    const local = pt.matrixTransform(m.inverse());
+    return pixelToSchema(local.x, local.y);
+  }
+
+  // Click: add a vertex to the in-progress polygon.
   svg.onclick = (e) => {
     if (!state.placingMissed) return;
-    // Map the viewport click through the SVG's CTM into viewBox coords.
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const m = svg.getScreenCTM();
-    if (!m) return;
-    const local = pt.matrixTransform(m.inverse());
-    const [sx, sy] = pixelToSchema(local.x, local.y);
-    state.missed_rooms.push({
-      centroid: [Math.round(sx * 100) / 100, Math.round(sy * 100) / 100],
-      correct_type: 'unknown',
-    });
-    exitPlacementMode();
+    const p = eventToSchema(e);
+    if (!p) return;
+    state.placingMissed.vertices.push([
+      Math.round(p[0] * 100) / 100,
+      Math.round(p[1] * 100) / 100,
+    ]);
     renderSvg();
-    renderSidebar();
+  };
+  // Double-click: close the ring (≥3 vertices) and commit.
+  svg.ondblclick = (e) => {
+    if (!state.placingMissed) return;
+    e.preventDefault();
+    commitPlacement();
+  };
+  // Move: update the rubber-band preview.
+  svg.onmousemove = (e) => {
+    if (!state.placingMissed) return;
+    const p = eventToSchema(e);
+    if (!p) return;
+    state.placingMissed.cursor = p;
+    renderSvg();
   };
 }
 
@@ -542,13 +611,15 @@ function renderSidebar() {
   state.missed_rooms.forEach((m, idx) => {
     const row = document.createElement('div');
     row.className = 'missed-row';
-    // Centroid summary — informational, set by the click. No need to
+    // Summary — informational, set by the drawing tool. No need to
     // expose it as an editable input for routine labeling.
     const coord = document.createElement('span');
     coord.style.color = '#777';
     coord.style.fontSize = '10px';
-    coord.style.minWidth = '90px';
-    coord.textContent = `#${idx + 1} at (${m.centroid[0].toFixed(0)}, ${m.centroid[1].toFixed(0)})`;
+    coord.style.minWidth = '110px';
+    const vertCount = (m.polygon && m.polygon.length) || 0;
+    const shape = vertCount >= 3 ? `${vertCount}-vertex polygon` : 'point';
+    coord.textContent = `#${idx + 1} · ${shape} @(${m.centroid[0].toFixed(0)}, ${m.centroid[1].toFixed(0)})`;
     const s = document.createElement('select');
     for (const t of CTX.allowed_types) {
       const opt = document.createElement('option');
@@ -640,6 +711,12 @@ function toYaml() {
     lines.push(`  - ${m.centroid[0]}`);
     lines.push(`  - ${m.centroid[1]}`);
     lines.push(`  correct_type: ${yamlEscape(m.correct_type)}`);
+    if (m.polygon && m.polygon.length >= 3) {
+      // Flow-style list for compactness — a 10-vertex polygon would
+      // otherwise be 21 lines of block-style YAML.
+      const flow = m.polygon.map(p => `[${p[0]}, ${p[1]}]`).join(', ');
+      lines.push(`  polygon: [${flow}]`);
+    }
   }
   lines.push('cross_references:');
   lines.push('  detected_targets:');
@@ -707,6 +784,16 @@ function parseYaml(text) {
       if (kv && current) {
         const k = kv[1], v = kv[2].trim();
         if (k === 'centroid') current.centroid = [];
+        else if (k === 'polygon' && v.startsWith('[')) {
+          // Flow-style polygon: "[[x1, y1], [x2, y2], ...]"
+          const poly = [];
+          const pairRe = /\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]/g;
+          let mm;
+          while ((mm = pairRe.exec(v)) !== null) {
+            poly.push([parseFloat(mm[1]), parseFloat(mm[2])]);
+          }
+          current.polygon = poly;
+        }
         else if (v.match(/^-?\d+(\.\d+)?$/)) current[k] = parseFloat(v);
         else if (v === 'null' || v === '') current[k] = null;
         else current[k] = v.replace(/^"|"$/g, '');
@@ -732,10 +819,14 @@ function loadYamlFile(file) {
           byId.get(r.room_id).correct_type = r.correct_type;
         }
       }
-      state.missed_rooms = (parsed.missed_rooms || []).map(r => ({
-        centroid: r.centroid || [0, 0],
-        correct_type: r.correct_type || 'unknown',
-      }));
+      state.missed_rooms = (parsed.missed_rooms || []).map(r => {
+        const out = {
+          centroid: r.centroid || [0, 0],
+          correct_type: r.correct_type || 'unknown',
+        };
+        if (r.polygon && r.polygon.length >= 3) out.polygon = r.polygon;
+        return out;
+      });
       state.xref_valid = new Set(parsed.cross_references?.valid_targets || []);
       state.missed_targets = (parsed.cross_references?.missed_targets || []).join('\n');
       renderSvg();
@@ -751,19 +842,41 @@ function loadYamlFile(file) {
 // ------------------------------------------------------------- placement mode
 
 function enterPlacementMode() {
-  state.placingMissed = true;
+  state.placingMissed = { vertices: [], cursor: null };
   document.getElementById('canvas').classList.add('placing');
   const btn = document.getElementById('add-missed');
   btn.classList.add('placing');
-  btn.textContent = 'Click on the plan…  (Esc to cancel)';
+  btn.textContent = 'Click vertices · double-click to finish · Esc to cancel';
+  renderSvg();
 }
 
 function exitPlacementMode() {
-  state.placingMissed = false;
+  state.placingMissed = null;
   document.getElementById('canvas').classList.remove('placing');
   const btn = document.getElementById('add-missed');
   btn.classList.remove('placing');
   btn.textContent = '+ Click on plan to place room';
+  renderSvg();
+}
+
+function commitPlacement() {
+  if (!state.placingMissed) return;
+  const verts = state.placingMissed.vertices;
+  if (verts.length < 3) {
+    alert('A room needs at least 3 vertices. Click more corners, or press Esc to cancel.');
+    return;
+  }
+  // Average the vertices for the centroid — labeler-friendly and good
+  // enough for the "informational only" role centroid plays in the eval.
+  const cx = verts.reduce((s, v) => s + v[0], 0) / verts.length;
+  const cy = verts.reduce((s, v) => s + v[1], 0) / verts.length;
+  state.missed_rooms.push({
+    polygon: verts.map(v => [v[0], v[1]]),
+    centroid: [Math.round(cx * 100) / 100, Math.round(cy * 100) / 100],
+    correct_type: 'unknown',
+  });
+  exitPlacementMode();
+  renderSidebar();
 }
 
 // ------------------------------------------------------------- init
@@ -776,7 +889,15 @@ document.addEventListener('DOMContentLoaded', () => {
     else enterPlacementMode();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && state.placingMissed) exitPlacementMode();
+    if (!state.placingMissed) return;
+    if (e.key === 'Escape') exitPlacementMode();
+    else if (e.key === 'Enter') { e.preventDefault(); commitPlacement(); }
+    else if (e.key === 'Backspace' && state.placingMissed.vertices.length > 0) {
+      // Quality-of-life: undo the last placed vertex.
+      e.preventDefault();
+      state.placingMissed.vertices.pop();
+      renderSvg();
+    }
   });
   document.getElementById('missed-targets').addEventListener('input', (e) => {
     state.missed_targets = e.target.value;
